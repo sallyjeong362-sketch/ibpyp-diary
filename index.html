@@ -82,6 +82,18 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .auth-tab { flex: 1; background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px; padding: 0.6rem; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
 .auth-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+.recent-classes { margin-bottom: 1.3rem; }
+.recent-class-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; margin-bottom: 0.5rem;
+}
+.recent-class-row .info { min-width: 0; }
+.recent-class-row .name { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-class-row .code { font-size: 17px; font-weight: 800; letter-spacing: 2px; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
+.recent-class-row .row-actions { flex: none; display: flex; gap: 0.4rem; }
+.recent-class-row button { flex: none; background: var(--accent-tint); color: var(--accent-strong); border: none; border-radius: 999px; padding: 0.5rem 0.85rem; font-size: 12px; font-weight: 700; }
+.recent-class-row .copy-btn { background: var(--surface-2); color: var(--ink-soft); }
+
 .form-field { margin-bottom: 0.9rem; }
 .form-field label { display: block; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin-bottom: 0.4rem; }
 .form-field input { width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 0.75rem 0.85rem; font-size: 14.5px; color: var(--ink); }
@@ -335,6 +347,12 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="back-btn" id="btn-teacher-join-back">← 뒤로</button>
     </div>
     <h2 style="font-size:18px;margin-bottom:1.1rem;">🍎 선생님 · 관리자</h2>
+
+    <div id="recent-classes-box" class="recent-classes hidden">
+      <div class="section-label" style="margin-top:0;">📋 이 기기에서 만들거나 연 학급</div>
+      <div id="recent-classes-list"></div>
+    </div>
+
     <div class="auth-tabs">
       <button class="auth-tab active" id="tab-teacher-open" type="button">학급 열기</button>
       <button class="auth-tab" id="tab-teacher-create" type="button">학급 만들기</button>
@@ -379,7 +397,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <div class="label">학급 코드 · 학생들에게 이 코드를 공유하세요</div>
       <div class="code" id="created-class-code">------</div>
     </div>
-    <div class="code-note">학생은 이 페이지 링크를 열고 "학생으로 시작하기"에서 위 코드와 이름만 입력하면 바로 일기를 쓸 수 있어요. 로그인은 필요 없어요.</div>
+    <div class="code-note">학생은 이 페이지 링크를 열고 "학생으로 시작하기"에서 위 코드와 이름만 입력하면 바로 일기를 쓸 수 있어요. 로그인은 필요 없어요.<br><br>코드를 잊으셔도 괜찮아요 — 이 기기(브라우저)에서는 "선생님으로 시작하기" 화면에 방금 만든 학급이 코드와 함께 계속 남아있어요.</div>
     <button class="ghost-btn" id="btn-copy-code" type="button" style="width:100%;margin-bottom:0.6rem;">📋 코드 복사하기</button>
     <button class="save-btn" id="btn-goto-dashboard" style="width:100%;">학급 대시보드로 이동</button>
   </div>
@@ -761,6 +779,7 @@ async function initBackend(){
 
 const SESSION_KEY = 'ibpyp_diary_session_v1';
 const STORAGE_LEVEL = 'ibpyp_diary_level_v1';
+const MY_CLASSES_KEY = 'ibpyp_diary_my_classes_v1';
 
 let session = loadSession();
 let currentClassCode = null;
@@ -790,6 +809,17 @@ function saveSession(s){
 }
 function getLastLevel(){ return localStorage.getItem(STORAGE_LEVEL) || 'elem'; }
 function setLastLevel(id){ localStorage.setItem(STORAGE_LEVEL, id); }
+
+function getMyClasses(){
+  try { return JSON.parse(localStorage.getItem(MY_CLASSES_KEY)) || []; }
+  catch(e){ return []; }
+}
+function rememberClass(code, name){
+  let list = getMyClasses().filter(c => c.code !== code);
+  list.unshift({ code, name: name || '' });
+  if (list.length > 20) list = list.slice(0, 20);
+  localStorage.setItem(MY_CLASSES_KEY, JSON.stringify(list));
+}
 
 async function sha256Hex(str){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -882,6 +912,7 @@ async function routeFromSession(){
     const result = await enterStudentSession(session.classCode, session.studentName);
     if (!result.ok) { saveSession(null); showView('role'); }
   } else if (session && session.role === 'teacher' && session.classCode) {
+    renderRecentClasses();
     showView('teacher-join');
     switchTeacherTab('open');
     $('#input-open-code').value = session.classCode;
@@ -1397,6 +1428,35 @@ function switchTeacherTab(tab){
   $('#teacher-create-panel').classList.toggle('hidden', tab !== 'create');
 }
 
+function renderRecentClasses(){
+  const box = $('#recent-classes-box');
+  const listBox = $('#recent-classes-list');
+  const classes = getMyClasses();
+  if (classes.length === 0) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  listBox.innerHTML = '';
+  classes.forEach(c => {
+    const row = el('div', 'recent-class-row');
+    row.innerHTML = `
+      <div class="info">
+        <div class="name">${escapeHtml(c.name || '이름 없는 학급')}</div>
+        <div class="code">${escapeHtml(c.code)}</div>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="copy-btn">📋 복사</button>
+        <button type="button" class="use-btn">열기</button>
+      </div>
+    `;
+    row.querySelector('.copy-btn').addEventListener('click', () => copyText(c.code));
+    row.querySelector('.use-btn').addEventListener('click', () => {
+      switchTeacherTab('open');
+      $('#input-open-code').value = c.code;
+      $('#input-open-password').focus();
+    });
+    listBox.appendChild(row);
+  });
+}
+
 async function enterTeacherDashboard(code, className){
   teacherClassCode = code;
   teacherClassName = className || '';
@@ -1494,6 +1554,7 @@ $('#btn-role-student').addEventListener('click', () => {
 $('#btn-role-teacher').addEventListener('click', () => {
   $('#teacher-open-error').textContent = '';
   switchTeacherTab('open');
+  renderRecentClasses();
   showView('teacher-join');
 });
 $('#btn-student-join-back').addEventListener('click', () => showView('role'));
@@ -1529,6 +1590,7 @@ $('#btn-teacher-open-submit').addEventListener('click', async () => {
     }
     errBox.textContent = '';
     saveSession({ role:'teacher', classCode: code });
+    rememberClass(code, result.className);
     await enterTeacherDashboard(code, result.className);
   } catch (e) {
     errBox.textContent = '확인에 실패했어요. 네트워크를 확인해주세요.';
@@ -1554,6 +1616,7 @@ $('#btn-teacher-create-submit').addEventListener('click', async () => {
     errBox.textContent = '';
     $('#created-class-code').textContent = code;
     pendingTeacherClass = { classCode: code, className: name };
+    rememberClass(code, name);
     showView('teacher-created');
   } catch (e) {
     errBox.textContent = '학급 생성에 실패했어요. 잠시 후 다시 시도해주세요.';
