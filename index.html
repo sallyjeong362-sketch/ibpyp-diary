@@ -137,6 +137,33 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .roster-chip.active { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-strong); }
 .roster-chip .count { opacity: 0.6; font-weight: 500; margin-left: 3px; }
 
+.calendar-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem 1rem 1.1rem; margin-bottom: 1rem; }
+.calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
+.calendar-header button { background: var(--surface-2); border: none; border-radius: 999px; width: 30px; height: 30px; font-size: 13px; color: var(--ink-soft); }
+.calendar-title { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.calendar-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 4px; }
+.calendar-dow { text-align: center; font-size: 10.5px; font-weight: 700; color: var(--ink-faint); padding-bottom: 2px; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.calendar-day {
+  position: relative; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 10px;
+  font-size: 12.5px; color: var(--ink); background: transparent; border: 1.5px solid transparent; font-variant-numeric: tabular-nums;
+}
+.calendar-day.empty { visibility: hidden; }
+.calendar-day.has-entries { font-weight: 800; }
+.calendar-day.has-entries::after {
+  content: ''; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.calendar-day.today { border-color: var(--line); }
+.calendar-day.selected { border-color: var(--cta); background: color-mix(in srgb, var(--cta) 16%, var(--surface)); }
+.calendar-day.selected::after { background: var(--cta); }
+
+.date-filter-info {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; background: var(--accent-tint);
+  color: var(--accent-strong); border-radius: var(--radius-md); padding: 0.6rem 0.85rem; font-size: 12.5px; font-weight: 700; margin-bottom: 1rem;
+}
+.date-filter-info button { flex: none; background: transparent; border: none; color: var(--accent-strong); font-size: 12px; font-weight: 700; }
+
 /* ---------- Editor ---------- */
 .section-label { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin: 1.3rem 0 0.55rem; display: flex; align-items: center; gap: 6px; }
 .level-chips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.55rem; }
@@ -503,11 +530,29 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="tool-btn" id="btn-refresh-dashboard" type="button">🔄 새로고침</button>
       <button class="tool-btn" id="btn-copy-dashboard-code" type="button">📋 학급 코드 복사</button>
     </div>
+
+    <div class="calendar-box">
+      <div class="calendar-header">
+        <button type="button" id="btn-cal-prev" aria-label="이전 달">◀</button>
+        <div class="calendar-title" id="calendar-title"></div>
+        <button type="button" id="btn-cal-next" aria-label="다음 달">▶</button>
+      </div>
+      <div class="calendar-dow-row">
+        <div class="calendar-dow">일</div><div class="calendar-dow">월</div><div class="calendar-dow">화</div>
+        <div class="calendar-dow">수</div><div class="calendar-dow">목</div><div class="calendar-dow">금</div><div class="calendar-dow">토</div>
+      </div>
+      <div class="calendar-grid" id="calendar-grid"></div>
+    </div>
+    <div id="date-filter-info" class="date-filter-info hidden">
+      <span class="date-filter-text"></span>
+      <button type="button" id="btn-clear-date-filter">✕ 날짜 필터 해제</button>
+    </div>
+
     <div class="roster-row" id="roster-row"></div>
     <div id="dashboard-empty" class="empty-state hidden">
       <div class="emoji">📭</div>
-      <h3>아직 제출된 일기가 없어요</h3>
-      <p>위의 학급 코드를 학생들에게 공유해보세요.</p>
+      <h3 id="dashboard-empty-title">아직 제출된 일기가 없어요</h3>
+      <p id="dashboard-empty-desc">위의 학급 코드를 학생들에게 공유해보세요.</p>
     </div>
     <div class="entry-list" id="dashboard-entry-list"></div>
   </div>
@@ -790,6 +835,9 @@ let teacherClassCode = null;
 let teacherClassName = '';
 let dashboardEntries = [];
 let dashboardFilterStudent = null;
+let dashboardFilterDate = null;
+let dashboardCalendarYear = new Date().getFullYear();
+let dashboardCalendarMonth = new Date().getMonth();
 let teacherEditingId = null;
 let pendingTeacherClass = null;
 
@@ -1460,11 +1508,15 @@ function renderRecentClasses(){
 async function enterTeacherDashboard(code, className){
   teacherClassCode = code;
   teacherClassName = className || '';
+  dashboardFilterStudent = null;
+  dashboardFilterDate = null;
   showView('loading');
   await refreshDashboard();
+  initDashboardCalendar();
   $('#dashboard-class-name').textContent = teacherClassName || '학급 대시보드';
   $('#dashboard-class-code').textContent = teacherClassCode;
   showView('teacher-dashboard');
+  renderDashboard();
 }
 
 async function refreshDashboard(){
@@ -1472,33 +1524,109 @@ async function refreshDashboard(){
   renderDashboard();
 }
 
+function initDashboardCalendar(){
+  const now = new Date();
+  let year = now.getFullYear(), month = now.getMonth();
+  if (dashboardEntries.length) {
+    const latest = dashboardEntries.reduce((a, b) => (a.date > b.date ? a : b));
+    const d = new Date(latest.date + 'T00:00:00');
+    if (!isNaN(d)) { year = d.getFullYear(); month = d.getMonth(); }
+  }
+  dashboardCalendarYear = year;
+  dashboardCalendarMonth = month;
+}
+
+function shiftCalendarMonth(delta){
+  let m = dashboardCalendarMonth + delta;
+  let y = dashboardCalendarYear;
+  if (m < 0) { m = 11; y -= 1; }
+  if (m > 11) { m = 0; y += 1; }
+  dashboardCalendarMonth = m;
+  dashboardCalendarYear = y;
+  renderDashboard();
+}
+
+function renderCalendar(){
+  const grid = $('#calendar-grid');
+  const year = dashboardCalendarYear, month = dashboardCalendarMonth;
+  $('#calendar-title').textContent = `${year}년 ${month + 1}월`;
+
+  const counts = {};
+  dashboardEntries.forEach(e => { counts[e.date] = (counts[e.date] || 0) + 1; });
+
+  const firstDow = new Date(year, month, 1).getDay();
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  const todayVal = todayStr();
+
+  grid.innerHTML = '';
+  for (let i = 0; i < firstDow; i++) grid.appendChild(el('div', 'calendar-day empty'));
+  for (let d = 1; d <= totalDays; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const classes = ['calendar-day'];
+    if (counts[dateStr]) classes.push('has-entries');
+    if (dateStr === todayVal) classes.push('today');
+    if (dateStr === dashboardFilterDate) classes.push('selected');
+    const btn = el('button', classes.join(' '), String(d));
+    btn.type = 'button';
+    btn.title = counts[dateStr] ? `일기 ${counts[dateStr]}건` : '';
+    btn.addEventListener('click', () => {
+      dashboardFilterDate = (dashboardFilterDate === dateStr) ? null : dateStr;
+      renderDashboard();
+    });
+    grid.appendChild(btn);
+  }
+}
+
 function renderDashboard(){
+  renderCalendar();
+
   const rosterBox = $('#roster-row');
   const listBox = $('#dashboard-entry-list');
   const emptyBox = $('#dashboard-empty');
+  const dateInfoBox = $('#date-filter-info');
   rosterBox.innerHTML = '';
   listBox.innerHTML = '';
 
   if (dashboardEntries.length === 0) {
     emptyBox.classList.remove('hidden');
+    $('#dashboard-empty-title').textContent = '아직 제출된 일기가 없어요';
+    $('#dashboard-empty-desc').textContent = '위의 학급 코드를 학생들에게 공유해보세요.';
+    dateInfoBox.classList.add('hidden');
     return;
   }
-  emptyBox.classList.add('hidden');
+
+  const dateScoped = dashboardFilterDate ? dashboardEntries.filter(e => e.date === dashboardFilterDate) : dashboardEntries;
+
+  if (dashboardFilterDate) {
+    dateInfoBox.classList.remove('hidden');
+    dateInfoBox.querySelector('.date-filter-text').textContent = `📅 ${formatDate(dashboardFilterDate)} · ${dateScoped.length}건`;
+  } else {
+    dateInfoBox.classList.add('hidden');
+  }
 
   const counts = {};
-  dashboardEntries.forEach(e => { counts[e.studentName] = (counts[e.studentName] || 0) + 1; });
+  dateScoped.forEach(e => { counts[e.studentName] = (counts[e.studentName] || 0) + 1; });
   const students = Object.keys(counts).sort((a, b) => a.localeCompare(b, 'ko'));
 
-  const allChip = el('button', 'roster-chip' + (!dashboardFilterStudent ? ' active' : ''), `전체 <span class="count">${dashboardEntries.length}</span>`);
+  const allChip = el('button', 'roster-chip' + (!dashboardFilterStudent ? ' active' : ''), `전체 <span class="count">${dateScoped.length}</span>`);
   allChip.addEventListener('click', () => { dashboardFilterStudent = null; renderDashboard(); });
   rosterBox.appendChild(allChip);
   students.forEach(name => {
     const chip = el('button', 'roster-chip' + (dashboardFilterStudent === name ? ' active' : ''), `${escapeHtml(name)} <span class="count">${counts[name]}</span>`);
-    chip.addEventListener('click', () => { dashboardFilterStudent = name; renderDashboard(); });
+    chip.addEventListener('click', () => { dashboardFilterStudent = (dashboardFilterStudent === name ? null : name); renderDashboard(); });
     rosterBox.appendChild(chip);
   });
 
-  const filtered = dashboardFilterStudent ? dashboardEntries.filter(e => e.studentName === dashboardFilterStudent) : dashboardEntries;
+  const filtered = dashboardFilterStudent ? dateScoped.filter(e => e.studentName === dashboardFilterStudent) : dateScoped;
+
+  if (filtered.length === 0) {
+    emptyBox.classList.remove('hidden');
+    $('#dashboard-empty-title').textContent = '이 조건에 맞는 일기가 없어요';
+    $('#dashboard-empty-desc').textContent = dashboardFilterDate ? '다른 날짜를 선택해보세요.' : '다른 학생을 선택해보세요.';
+    return;
+  }
+  emptyBox.classList.add('hidden');
+
   filtered.forEach(entry => {
     const lv = LEVEL_MAP[entry.level] || LEVELS[0];
     const snippetSource = entry.mode === 'freeform' ? entry.text : (entry.lines || []).find(l => l && l.trim());
@@ -1674,6 +1802,9 @@ $('#btn-detail-delete').addEventListener('click', deleteCurrentEntry);
 $('#btn-detail-print').addEventListener('click', () => window.print());
 
 $('#btn-refresh-dashboard').addEventListener('click', refreshDashboard);
+$('#btn-cal-prev').addEventListener('click', () => shiftCalendarMonth(-1));
+$('#btn-cal-next').addEventListener('click', () => shiftCalendarMonth(1));
+$('#btn-clear-date-filter').addEventListener('click', () => { dashboardFilterDate = null; renderDashboard(); });
 $('#btn-teacher-detail-back').addEventListener('click', () => showView('teacher-dashboard'));
 $('#btn-save-review').addEventListener('click', async () => {
   const reviewed = $('#input-reviewed').checked;
