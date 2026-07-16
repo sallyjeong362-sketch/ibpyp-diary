@@ -106,6 +106,10 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .code-note { font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; margin-bottom: 1.2rem; }
 
 /* ---------- List view ---------- */
+.list-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.1rem; }
+.list-tab { flex: 1; background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px; padding: 0.6rem; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+.list-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
 .empty-state { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius-lg); padding: 2.2rem 1.5rem; text-align: center; color: var(--ink-soft); }
 .empty-state .emoji { font-size: 40px; margin-bottom: 0.6rem; }
 .empty-state h3 { color: var(--ink); margin-bottom: 0.4rem; }
@@ -265,6 +269,19 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .edit-btn { background: var(--surface); border: 1.5px solid var(--line); color: var(--ink); }
 .print-btn { background: var(--surface); border: 1.5px solid var(--line); color: var(--ink-soft); }
 .delete-btn { background: transparent; border: 1.5px solid var(--danger); color: var(--danger); }
+
+.comments-section { margin-top: 1.3rem; }
+.comments-list { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.9rem; }
+.comment-item { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 0.6rem 0.75rem; display: flex; justify-content: space-between; gap: 0.5rem; }
+.comment-item .body { min-width: 0; }
+.comment-item .author { font-size: 12px; font-weight: 700; color: var(--accent-strong); }
+.comment-item .text { font-size: 13.5px; margin-top: 2px; line-height: 1.5; overflow-wrap: anywhere; }
+.comment-item .time { font-size: 10.5px; color: var(--ink-faint); margin-top: 3px; }
+.comment-item .delete-comment-btn { flex: none; background: transparent; border: none; color: var(--ink-faint); font-size: 13px; }
+.comment-empty { font-size: 12.5px; color: var(--ink-faint); padding: 0.3rem 0 0.6rem; }
+.comment-input-row { display: flex; gap: 0.5rem; }
+.comment-input-row input { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 0.65rem 0.8rem; font-size: 13.5px; color: var(--ink); }
+.comment-input-row button { flex: none; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-md); padding: 0.65rem 1.1rem; font-size: 13px; font-weight: 700; }
 
 .teacher-comment-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem 1.1rem; margin-top: 1rem; }
 .reviewed-toggle { display: flex; align-items: center; gap: 0.55rem; font-size: 13.5px; font-weight: 700; }
@@ -440,10 +457,15 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
     </div>
     <button class="back-btn" id="btn-student-exit" type="button" style="margin-bottom:1.1rem;">↩️ 다른 학생으로 전환</button>
 
+    <div class="list-tabs">
+      <button class="list-tab active" id="tab-list-mine" type="button">내 일기</button>
+      <button class="list-tab" id="tab-list-class" type="button">👬 반 친구들 일기</button>
+    </div>
+
     <div id="empty-state" class="empty-state hidden">
-      <div class="emoji">📔</div>
-      <h3>아직 쓴 일기가 없어요</h3>
-      <p>사진 한 장과 3줄이면 충분해요.<br>오늘의 이야기를 영어로 남겨볼까요?</p>
+      <div class="emoji" id="empty-state-emoji">📔</div>
+      <h3 id="empty-state-title">아직 쓴 일기가 없어요</h3>
+      <p id="empty-state-desc">사진 한 장과 3줄이면 충분해요.<br>오늘의 이야기를 영어로 남겨볼까요?</p>
     </div>
 
     <div id="level-legend" class="level-legend"></div>
@@ -515,6 +537,15 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="print-btn" id="btn-detail-print">🖨️ 인쇄 / PDF</button>
       <button class="delete-btn" id="btn-detail-delete">🗑️ 삭제</button>
     </div>
+
+    <div class="comments-section">
+      <div class="section-label" style="margin-top:0;">💬 댓글</div>
+      <div id="comments-list" class="comments-list"></div>
+      <div class="comment-input-row">
+        <input type="text" id="input-comment-text" placeholder="따뜻한 댓글을 남겨보세요! (예: Great job! 👍)" maxlength="200">
+        <button id="btn-add-comment" type="button">등록</button>
+      </div>
+    </div>
   </div>
 
   <!-- TEACHER DASHBOARD -->
@@ -563,6 +594,12 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="back-btn" id="btn-teacher-detail-back">← 대시보드로</button>
     </div>
     <div class="diary-page" id="teacher-diary-page"></div>
+
+    <div class="comments-section">
+      <div class="section-label" style="margin-top:0;">💬 학생들 댓글</div>
+      <div id="teacher-comments-list" class="comments-list"></div>
+    </div>
+
     <div class="teacher-comment-box">
       <div class="reviewed-toggle">
         <input type="checkbox" id="input-reviewed">
@@ -696,26 +733,47 @@ const TEMPLATES = [
 
 /* ---------------- Backends (Firestore or in-tab demo mock) ---------------- */
 
-function createFirestoreBackend(db, sdk){
+function commentSortKey(c){
+  const t = c && c.createdAt;
+  if (!t) return 0;
+  if (typeof t === 'string') return new Date(t).getTime();
+  if (typeof t.toMillis === 'function') return t.toMillis();
+  if (typeof t.seconds === 'number') return t.seconds * 1000;
+  return 0;
+}
+function formatCommentTime(ts){
+  let d;
+  if (!ts) return '';
+  if (typeof ts === 'string') d = new Date(ts);
+  else if (typeof ts.toMillis === 'function') d = new Date(ts.toMillis());
+  else if (typeof ts.seconds === 'number') d = new Date(ts.seconds * 1000);
+  else return '';
+  if (isNaN(d)) return '';
+  return d.toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+function createFirestoreBackend(db, sdk, getUid){
   const { collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, query, where, serverTimestamp } = sdk;
   return {
     mode: 'firebase',
+    getUid,
     async classExists(code){
       const snap = await getDoc(doc(db, 'classes', code));
       return snap.exists();
     },
     async createClass(code, name, passwordHash){
-      await setDoc(doc(db, 'classes', code), { name, teacherPasswordHash: passwordHash, createdAt: serverTimestamp() });
+      await setDoc(doc(db, 'classes', code), { name, teacherPasswordHash: passwordHash, teacherUid: getUid(), createdAt: serverTimestamp() });
     },
     async verifyTeacher(code, passwordHash){
       const snap = await getDoc(doc(db, 'classes', code));
       if (!snap.exists()) return { ok:false, reason:'not-found' };
       const data = snap.data();
       if (data.teacherPasswordHash !== passwordHash) return { ok:false, reason:'bad-password' };
+      try { await updateDoc(doc(db, 'classes', code), { teacherUid: getUid() }); } catch(e) { /* best-effort */ }
       return { ok:true, className: data.name };
     },
     async addEntry(code, entry){
-      const ref = await addDoc(collection(db, 'classes', code, 'entries'), { ...entry, reviewed:false, teacherComment:'', createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      const ref = await addDoc(collection(db, 'classes', code, 'entries'), { ...entry, ownerUid: getUid(), reviewed:false, teacherComment:'', createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
       return ref.id;
     },
     async updateEntry(code, id, patch){
@@ -734,10 +792,24 @@ function createFirestoreBackend(db, sdk){
       arr.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
       return arr;
     },
+    async addComment(code, entryId, comment){
+      const ref = await addDoc(collection(db, 'classes', code, 'entries', entryId, 'comments'), { ...comment, ownerUid: getUid(), createdAt: serverTimestamp() });
+      return ref.id;
+    },
+    async listComments(code, entryId){
+      const snap = await getDocs(collection(db, 'classes', code, 'entries', entryId, 'comments'));
+      const arr = [];
+      snap.forEach(d => arr.push(Object.assign({ id: d.id }, d.data())));
+      arr.sort((a, b) => commentSortKey(a) - commentSortKey(b));
+      return arr;
+    },
+    async deleteComment(code, entryId, commentId){
+      await deleteDoc(doc(db, 'classes', code, 'entries', entryId, 'comments', commentId));
+    },
   };
 }
 
-function createMockBackend(){
+function createMockBackend(getIdentity){
   const KEY = 'ibpyp_diary_mock_db_v1';
   function load(){
     try { return JSON.parse(sessionStorage.getItem(KEY)) || { classes:{} }; }
@@ -745,12 +817,14 @@ function createMockBackend(){
   }
   function save(dbObj){ sessionStorage.setItem(KEY, JSON.stringify(dbObj)); }
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  const getUid = getIdentity;
   return {
     mode: 'mock',
+    getUid,
     async classExists(code){ const dbObj = load(); return !!dbObj.classes[code]; },
     async createClass(code, name, passwordHash){
       const dbObj = load();
-      dbObj.classes[code] = { name, teacherPasswordHash: passwordHash, entries:{} };
+      dbObj.classes[code] = { name, teacherPasswordHash: passwordHash, teacherUid: getUid(), entries:{} };
       save(dbObj);
     },
     async verifyTeacher(code, passwordHash){
@@ -758,6 +832,8 @@ function createMockBackend(){
       const c = dbObj.classes[code];
       if (!c) return { ok:false, reason:'not-found' };
       if (c.teacherPasswordHash !== passwordHash) return { ok:false, reason:'bad-password' };
+      c.teacherUid = getUid();
+      save(dbObj);
       return { ok:true, className: c.name };
     },
     async addEntry(code, entry){
@@ -766,7 +842,7 @@ function createMockBackend(){
       if (!c) throw new Error('학급을 찾을 수 없어요.');
       const id = uid();
       const now = new Date().toISOString();
-      c.entries[id] = Object.assign({ id, reviewed:false, teacherComment:'', createdAt: now, updatedAt: now }, entry);
+      c.entries[id] = Object.assign({ id, ownerUid: getUid(), reviewed:false, teacherComment:'', createdAt: now, updatedAt: now }, entry);
       save(dbObj);
       return id;
     },
@@ -794,6 +870,31 @@ function createMockBackend(){
       arr.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
       return arr;
     },
+    async addComment(code, entryId, comment){
+      const dbObj = load();
+      const c = dbObj.classes[code];
+      if (!c || !c.entries[entryId]) throw new Error('일기를 찾을 수 없어요.');
+      if (!c.entries[entryId].comments) c.entries[entryId].comments = {};
+      const id = uid();
+      c.entries[entryId].comments[id] = Object.assign({ id, ownerUid: getUid(), createdAt: new Date().toISOString() }, comment);
+      save(dbObj);
+      return id;
+    },
+    async listComments(code, entryId){
+      const dbObj = load();
+      const c = dbObj.classes[code];
+      if (!c || !c.entries[entryId] || !c.entries[entryId].comments) return [];
+      const arr = Object.values(c.entries[entryId].comments);
+      arr.sort((a, b) => commentSortKey(a) - commentSortKey(b));
+      return arr;
+    },
+    async deleteComment(code, entryId, commentId){
+      const dbObj = load();
+      const c = dbObj.classes[code];
+      if (!c || !c.entries[entryId] || !c.entries[entryId].comments) return;
+      delete c.entries[entryId].comments[commentId];
+      save(dbObj);
+    },
   };
 }
 
@@ -807,16 +908,29 @@ async function initBackend(){
     try {
       const appMod = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js');
       const fsMod = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js');
+      const authMod = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js');
       const app = appMod.initializeApp(cfg);
       const db = fsMod.getFirestore(app);
-      backend = createFirestoreBackend(db, fsMod);
+      const auth = authMod.getAuth(app);
+      await new Promise((resolve, reject) => {
+        const unsub = authMod.onAuthStateChanged(auth, user => {
+          if (user) { unsub(); resolve(); }
+        }, reject);
+        authMod.signInAnonymously(auth).catch(reject);
+      });
+      const uid = auth.currentUser.uid;
+      backend = createFirestoreBackend(db, fsMod, () => uid);
       isMockMode = false;
       return;
     } catch (e) {
-      console.error('Firebase 초기화에 실패해서 데모 모드로 전환합니다.', e);
+      console.error('Firebase 초기화에 실패해서 데모 모드로 전환합니다. (Firebase 콘솔에서 Authentication > 익명 로그인이 켜져 있는지 확인해보세요)', e);
     }
   }
-  backend = createMockBackend();
+  backend = createMockBackend(() => {
+    if (currentStudentName && currentClassCode) return 'student:' + currentClassCode + ':' + currentStudentName;
+    if (teacherClassCode) return 'teacher:' + teacherClassCode;
+    return 'anon';
+  });
   isMockMode = true;
 }
 
@@ -830,6 +944,7 @@ let session = loadSession();
 let currentClassCode = null;
 let currentStudentName = null;
 let entries = [];
+let listScope = 'mine';
 
 let teacherClassCode = null;
 let teacherClassName = '';
@@ -978,13 +1093,25 @@ async function enterStudentSession(classCode, studentName){
   currentClassCode = classCode;
   currentStudentName = studentName;
   $('#student-session-label').textContent = classCode + ' · ' + studentName;
+  listScope = 'mine';
+  $('#tab-list-mine').classList.add('active');
+  $('#tab-list-class').classList.remove('active');
   await refreshStudentList();
   showView('list');
   return { ok:true };
 }
 
+function switchListScope(scope){
+  listScope = scope;
+  $('#tab-list-mine').classList.toggle('active', scope === 'mine');
+  $('#tab-list-class').classList.toggle('active', scope === 'class');
+  refreshStudentList();
+}
+
 async function refreshStudentList(){
-  entries = await backend.listEntries(currentClassCode, { studentName: currentStudentName });
+  entries = listScope === 'mine'
+    ? await backend.listEntries(currentClassCode, { studentName: currentStudentName })
+    : await backend.listEntries(currentClassCode, {});
   renderList();
 }
 
@@ -1003,9 +1130,16 @@ function renderList(){
   const list = $('#entry-list');
   const empty = $('#empty-state');
   list.innerHTML = '';
+  const showLegend = listScope === 'mine';
+
   if (entries.length === 0) {
     empty.classList.remove('hidden');
-    $('#level-legend').classList.remove('hidden');
+    $('#empty-state-emoji').textContent = listScope === 'mine' ? '📔' : '👬';
+    $('#empty-state-title').textContent = listScope === 'mine' ? '아직 쓴 일기가 없어요' : '아직 반 친구들이 쓴 일기가 없어요';
+    $('#empty-state-desc').innerHTML = listScope === 'mine'
+      ? '사진 한 장과 3줄이면 충분해요.<br>오늘의 이야기를 영어로 남겨볼까요?'
+      : '친구들이 일기를 쓰면 여기서 볼 수 있어요.';
+    $('#level-legend').classList.toggle('hidden', !showLegend);
     return;
   }
   empty.classList.add('hidden');
@@ -1023,6 +1157,7 @@ function renderList(){
           <span class="badge">${lv.emoji} ${escapeHtml(lv.label)}</span>
           <span>${escapeHtml(formatDate(entry.date))}</span>
           ${entry.mood ? `<span>${entry.mood}</span>` : ''}
+          ${listScope === 'class' ? `<span>🧑‍🎓 ${escapeHtml(entry.studentName || '')}</span>` : ''}
         </div>
         <div class="entry-snippet">${escapeHtml(snippet)}</div>
         ${entry.topic ? `<div class="entry-topic">💡 ${escapeHtml(entry.topic)}</div>` : ''}
@@ -1059,9 +1194,16 @@ function openNewEntry(){
   renderEditor();
 }
 
+function isOwnEntry(entry){
+  if (!entry) return false;
+  if (entry.ownerUid && backend && backend.getUid) return entry.ownerUid === backend.getUid();
+  return entry.studentName === currentStudentName;
+}
+
 function openEditEntry(id){
   const entry = entries.find(e => e.id === id);
   if (!entry) return;
+  if (!isOwnEntry(entry)) { showToast('내가 쓴 일기만 수정할 수 있어요.'); return; }
   draft = JSON.parse(JSON.stringify(entry));
   if (!draft.lines || draft.lines.length === 0) draft.lines = ['', '', ''];
   editingId = id;
@@ -1316,10 +1458,50 @@ function buildDiaryPageHtml(entry){
   return { lv, photoHtml, bodyHtml };
 }
 
+function renderCommentItems(container, comments, opts){
+  container.innerHTML = '';
+  if (comments.length === 0) {
+    container.appendChild(el('div', 'comment-empty', opts.emptyText || '아직 댓글이 없어요. 첫 댓글을 남겨보세요!'));
+    return;
+  }
+  comments.forEach(c => {
+    const canDelete = !!(opts.canDelete && opts.canDelete(c));
+    const item = el('div', 'comment-item', `
+      <div class="body">
+        <div class="author">${escapeHtml(c.authorName || '익명')}</div>
+        <div class="text">${escapeHtml(c.text || '')}</div>
+        <div class="time">${escapeHtml(formatCommentTime(c.createdAt))}</div>
+      </div>
+      ${canDelete ? `<button type="button" class="delete-comment-btn">✕</button>` : ''}
+    `);
+    if (canDelete) {
+      item.querySelector('.delete-comment-btn').addEventListener('click', async () => {
+        if (!confirm('댓글을 삭제할까요?')) return;
+        await backend.deleteComment(opts.classCode, opts.entryId, c.id);
+        await opts.onChange();
+      });
+    }
+    container.appendChild(item);
+  });
+}
+
+async function loadStudentComments(){
+  const container = $('#comments-list');
+  container.innerHTML = '<div class="comment-empty">불러오는 중...</div>';
+  const comments = await backend.listComments(currentClassCode, editingId);
+  renderCommentItems(container, comments, {
+    classCode: currentClassCode,
+    entryId: editingId,
+    canDelete: c => !!(backend.getUid && c.ownerUid === backend.getUid()),
+    onChange: loadStudentComments,
+  });
+}
+
 function openDetail(id){
   const entry = entries.find(e => e.id === id);
   if (!entry) return;
   editingId = id;
+  const own = isOwnEntry(entry);
   const { lv, photoHtml, bodyHtml } = buildDiaryPageHtml(entry);
   const page = $('#diary-page');
   const feedbackHtml = (entry.reviewed || entry.teacherComment)
@@ -1335,16 +1517,22 @@ function openDetail(id){
         <span class="badge">${lv.emoji} ${escapeHtml(lv.label)}</span>
         <span class="diary-page-date">${escapeHtml(formatDate(entry.date))}</span>
         ${entry.mood ? `<span class="diary-page-mood">${entry.mood}</span>` : ''}
+        <span class="badge">🧑‍🎓 ${escapeHtml(entry.studentName || '')}</span>
       </div>
       ${entry.topic ? `<div class="diary-page-topic">💡 ${escapeHtml(entry.topic)}</div>` : ''}
       ${bodyHtml}
       ${feedbackHtml}
     </div>
   `;
+  $('#btn-detail-edit').classList.toggle('hidden', !own);
+  $('#btn-detail-delete').classList.toggle('hidden', !own);
   showView('detail');
+  loadStudentComments();
 }
 
 async function deleteCurrentEntry(){
+  const entry = entries.find(e => e.id === editingId);
+  if (!isOwnEntry(entry)) { showToast('내가 쓴 일기만 삭제할 수 있어요.'); return; }
   if (!confirm('이 일기를 삭제할까요? 되돌릴 수 없어요.')) return;
   await backend.deleteEntry(currentClassCode, editingId);
   showToast('일기를 삭제했어요');
@@ -1671,6 +1859,20 @@ function openTeacherDetail(id){
   $('#input-reviewed').checked = !!entry.reviewed;
   $('#input-teacher-comment').value = entry.teacherComment || '';
   showView('teacher-detail');
+  loadTeacherComments();
+}
+
+async function loadTeacherComments(){
+  const container = $('#teacher-comments-list');
+  container.innerHTML = '<div class="comment-empty">불러오는 중...</div>';
+  const comments = await backend.listComments(teacherClassCode, teacherEditingId);
+  renderCommentItems(container, comments, {
+    classCode: teacherClassCode,
+    entryId: teacherEditingId,
+    emptyText: '아직 댓글이 없어요.',
+    canDelete: () => true,
+    onChange: loadTeacherComments,
+  });
 }
 
 /* ---------------- Event wiring ---------------- */
@@ -1762,6 +1964,19 @@ $('#btn-student-exit').addEventListener('click', () => { saveSession(null); show
 $('#btn-teacher-exit').addEventListener('click', () => { saveSession(null); showView('role'); });
 
 $('#btn-new-entry').addEventListener('click', openNewEntry);
+$('#tab-list-mine').addEventListener('click', () => switchListScope('mine'));
+$('#tab-list-class').addEventListener('click', () => switchListScope('class'));
+$('#btn-add-comment').addEventListener('click', async () => {
+  const input = $('#input-comment-text');
+  const text = input.value.trim();
+  if (!text) return;
+  await backend.addComment(currentClassCode, editingId, { authorName: currentStudentName, text });
+  input.value = '';
+  await loadStudentComments();
+});
+$('#input-comment-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('#btn-add-comment').click(); }
+});
 $('#btn-editor-back').addEventListener('click', cancelEditor);
 $('#btn-editor-cancel').addEventListener('click', cancelEditor);
 $('#btn-save-entry').addEventListener('click', saveEntry);
