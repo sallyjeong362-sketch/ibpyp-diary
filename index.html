@@ -340,12 +340,24 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+.export-title { text-align: center; margin-bottom: 1.4rem; }
+.export-title h2 { font-size: 18px; margin-bottom: 0.3rem; }
+.export-title p { font-size: 12.5px; color: var(--ink-soft); }
+.export-student-heading { font-size: 16px; font-weight: 800; margin: 1.6rem 0 0.8rem; padding-bottom: 0.4rem; border-bottom: 2px solid var(--accent); }
+.export-entry { margin-bottom: 1.6rem; }
+.export-entry .diary-page { box-shadow: none; }
+
 @media print {
   body * { visibility: hidden; }
   #view-detail, #view-detail * { visibility: visible; }
   #view-detail { position: absolute; left: 0; top: 0; width: 100%; }
-  .detail-actions, .back-btn { display: none !important; }
+  #view-teacher-export, #view-teacher-export * { visibility: visible; }
+  #view-teacher-export { position: absolute; left: 0; top: 0; width: 100%; }
+  .detail-actions, .back-btn, .export-controls, .export-print-row, .form-hint, .topbar, .comments-section { display: none !important; }
   .diary-page { box-shadow: none; border: none; }
+  .export-entry { page-break-inside: avoid; page-break-after: always; }
+  .export-entry:last-child { page-break-after: auto; }
+  .export-student-heading { page-break-before: always; }
 }
 </style>
 </head>
@@ -588,7 +600,8 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="tool-btn" id="btn-refresh-dashboard" type="button">🔄 새로고침</button>
       <button class="tool-btn" id="btn-copy-dashboard-code" type="button">📋 학급 코드 복사</button>
     </div>
-    <button class="ghost-btn" id="btn-open-teacher-garden" type="button" style="width:100%;margin-bottom:1rem;">🌳 우리 반 성장 정원 보기</button>
+    <button class="ghost-btn" id="btn-open-teacher-garden" type="button" style="width:100%;margin-bottom:0.6rem;">🌳 우리 반 성장 정원 보기</button>
+    <button class="ghost-btn" id="btn-open-teacher-export" type="button" style="width:100%;margin-bottom:1rem;">🖨️ 기간별 인쇄 · PDF 만들기</button>
 
     <div class="calendar-box">
       <div class="calendar-header">
@@ -625,6 +638,46 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="back-btn" id="btn-teacher-garden-back" type="button">← 대시보드로</button>
     </div>
     <div class="garden-grid" id="teacher-garden-grid"></div>
+  </div>
+
+  <!-- TEACHER EXPORT VIEW -->
+  <div id="view-teacher-export" class="view hidden">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-title">기간별 인쇄 · PDF 만들기</div>
+      </div>
+      <button class="back-btn" id="btn-teacher-export-back" type="button">← 대시보드로</button>
+    </div>
+
+    <div class="export-controls">
+      <div class="section-label" style="margin-top:0;">👤 학생 선택</div>
+      <select id="select-export-student" class="date-input" style="width:100%;">
+        <option value="">전체 학생</option>
+      </select>
+
+      <div class="section-label">🗓️ 기간 선택 (비워두면 전체 기간)</div>
+      <div class="field-row">
+        <input type="date" id="input-export-start" class="date-input">
+        <span style="color:var(--ink-faint);">~</span>
+        <input type="date" id="input-export-end" class="date-input">
+      </div>
+
+      <button class="save-btn" id="btn-generate-export" type="button" style="width:100%;margin-top:1rem;">📄 모아보기 만들기</button>
+    </div>
+
+    <div id="export-empty" class="empty-state hidden" style="margin-top:1rem;">
+      <div class="emoji">📭</div>
+      <h3>조건에 맞는 일기가 없어요</h3>
+      <p>학생이나 기간을 다시 선택해보세요.</p>
+    </div>
+
+    <div id="export-preview-wrap" class="hidden">
+      <div class="tool-btn-row export-print-row" style="margin:1rem 0 0.5rem;">
+        <button class="tool-btn" id="btn-print-export" type="button">🖨️ 인쇄 / PDF로 저장</button>
+      </div>
+      <p class="form-hint" style="margin-bottom:1rem;">인쇄 대화상자에서 "PDF로 저장"을 고르면 파일로 만들어 전송할 수 있어요.</p>
+      <div id="export-preview"></div>
+    </div>
   </div>
 
   <!-- TEACHER ENTRY DETAIL -->
@@ -1087,7 +1140,7 @@ function showToast(msg){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
 }
-const VIEW_IDS = ['loading','role','student-join','teacher-join','teacher-created','list','editor','detail','teacher-dashboard','teacher-detail','teacher-garden'];
+const VIEW_IDS = ['loading','role','student-join','teacher-join','teacher-created','list','editor','detail','teacher-dashboard','teacher-detail','teacher-garden','teacher-export'];
 function showView(name){
   VIEW_IDS.forEach(v => $('#view-' + v).classList.toggle('hidden', v !== name));
   window.scrollTo(0, 0);
@@ -1840,6 +1893,88 @@ function openTeacherGarden(){
   showView('teacher-garden');
 }
 
+function openTeacherExport(){
+  const select = $('#select-export-student');
+  const names = Array.from(new Set(dashboardEntries.map(e => e.studentName))).sort((a, b) => a.localeCompare(b, 'ko'));
+  select.innerHTML = '<option value="">전체 학생</option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  $('#input-export-start').value = '';
+  $('#input-export-end').value = '';
+  $('#export-preview-wrap').classList.add('hidden');
+  $('#export-empty').classList.add('hidden');
+  showView('teacher-export');
+}
+
+function buildExportEntryHtml(entry){
+  const { lv, photoHtml, bodyHtml } = buildDiaryPageHtml(entry);
+  const feedbackHtml = (entry.reviewed || entry.teacherComment)
+    ? `<div class="diary-page-feedback">
+        <span class="reviewed-badge">✅ 선생님이 확인했어요</span>
+        ${entry.teacherComment ? `<div class="comment">💬 ${escapeHtml(entry.teacherComment)}</div>` : ''}
+      </div>`
+    : '';
+  return `
+    <div class="export-entry">
+      <div class="diary-page">
+        ${photoHtml}
+        <div class="diary-page-body">
+          <div class="diary-page-meta">
+            <span class="badge">${lv.emoji} ${escapeHtml(lv.label)}</span>
+            <span class="diary-page-date">${escapeHtml(formatDate(entry.date))}</span>
+            ${entry.mood ? `<span class="diary-page-mood">${entry.mood}</span>` : ''}
+            <span class="badge">🧑‍🎓 ${escapeHtml(entry.studentName || '')}</span>
+          </div>
+          ${entry.topic ? `<div class="diary-page-topic">💡 ${escapeHtml(entry.topic)}</div>` : ''}
+          ${bodyHtml}
+          ${feedbackHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function generateExport(){
+  const studentName = $('#select-export-student').value;
+  const start = $('#input-export-start').value;
+  const end = $('#input-export-end').value;
+  const filtered = dashboardEntries.filter(e =>
+    (!studentName || e.studentName === studentName) &&
+    (!start || e.date >= start) &&
+    (!end || e.date <= end)
+  );
+
+  const wrap = $('#export-preview-wrap');
+  const emptyBox = $('#export-empty');
+  const preview = $('#export-preview');
+
+  if (filtered.length === 0) {
+    wrap.classList.add('hidden');
+    emptyBox.classList.remove('hidden');
+    return;
+  }
+  emptyBox.classList.add('hidden');
+  wrap.classList.remove('hidden');
+
+  const rangeLabel = (start || end)
+    ? `${start ? formatDate(start) : '처음'} ~ ${end ? formatDate(end) : '오늘'}`
+    : '전체 기간';
+  let html = `<div class="export-title"><h2>${escapeHtml(teacherClassName || '우리 반')} 영어 일기 모음</h2><p>${studentName ? escapeHtml(studentName) + ' · ' : ''}${escapeHtml(rangeLabel)} · 총 ${filtered.length}편</p></div>`;
+
+  if (studentName) {
+    const sorted = [...filtered].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    html += sorted.map(buildExportEntryHtml).join('');
+  } else {
+    const byStudent = {};
+    filtered.forEach(e => { (byStudent[e.studentName] = byStudent[e.studentName] || []).push(e); });
+    const names = Object.keys(byStudent).sort((a, b) => a.localeCompare(b, 'ko'));
+    names.forEach(name => {
+      const sorted = byStudent[name].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+      html += `<div class="export-student-heading">🧑‍🎓 ${escapeHtml(name)} (${sorted.length}편)</div>`;
+      html += sorted.map(buildExportEntryHtml).join('');
+    });
+  }
+  preview.innerHTML = html;
+}
+
 function initDashboardCalendar(){
   const now = new Date();
   let year = now.getFullYear(), month = now.getMonth();
@@ -2148,6 +2283,10 @@ $('#btn-detail-print').addEventListener('click', () => window.print());
 $('#btn-refresh-dashboard').addEventListener('click', refreshDashboard);
 $('#btn-open-teacher-garden').addEventListener('click', openTeacherGarden);
 $('#btn-teacher-garden-back').addEventListener('click', () => showView('teacher-dashboard'));
+$('#btn-open-teacher-export').addEventListener('click', openTeacherExport);
+$('#btn-teacher-export-back').addEventListener('click', () => showView('teacher-dashboard'));
+$('#btn-generate-export').addEventListener('click', generateExport);
+$('#btn-print-export').addEventListener('click', () => window.print());
 $('#btn-cal-prev').addEventListener('click', () => shiftCalendarMonth(-1));
 $('#btn-cal-next').addEventListener('click', () => shiftCalendarMonth(1));
 $('#btn-clear-date-filter').addEventListener('click', () => { dashboardFilterDate = null; renderDashboard(); });
