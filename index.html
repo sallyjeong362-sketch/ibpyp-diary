@@ -308,6 +308,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .ai-check-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem 1.1rem; margin-top: 1rem; }
 .ai-check-btn { width: 100%; background: var(--accent-strong); color: #fff; border: none; border-radius: var(--radius-md); padding: 0.7rem; font-size: 13.5px; font-weight: 700; }
 .ai-check-btn:disabled { opacity: 0.6; }
+.ai-engine-label { font-size: 11px; color: var(--ink-faint); margin-top: 0.5rem; text-align: center; }
 .ai-check-results { margin-top: 0.9rem; }
 .ai-check-summary { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.7rem; }
 .ai-check-count { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
@@ -707,6 +708,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
     <div class="ai-check-box">
       <div class="section-label" style="margin-top:0;">✨ AI 문법 · 철자 첨삭</div>
       <button class="ai-check-btn" id="btn-ai-check" type="button">✨ AI 첨삭 받기</button>
+      <div class="ai-engine-label" id="ai-engine-label"></div>
       <div id="ai-check-results" class="ai-check-results hidden"></div>
     </div>
 
@@ -2146,6 +2148,7 @@ function openTeacherDetail(id){
   $('#input-teacher-comment').value = entry.teacherComment || '';
   $('#ai-check-results').classList.add('hidden');
   $('#ai-check-results').innerHTML = '';
+  $('#ai-engine-label').textContent = aiEndpointConfigured() ? '🤖 Claude AI로 첨삭해요' : '📝 무료 문법검사기(LanguageTool)로 첨삭해요';
   showView('teacher-detail');
   loadTeacherComments();
 }
@@ -2170,7 +2173,12 @@ function entryPlainText(entry){
   return entry.mode === 'freeform' ? (entry.text || '') : (entry.lines || []).filter(l => l && l.trim()).join('\n');
 }
 
-async function checkGrammar(text){
+function aiEndpointConfigured(){
+  const url = window.AI_CHECK_ENDPOINT;
+  return !!(url && String(url).indexOf('YOUR_') !== 0);
+}
+
+async function checkGrammarWithLanguageTool(text){
   const params = new URLSearchParams();
   params.set('text', text);
   params.set('language', 'en-US');
@@ -2181,7 +2189,30 @@ async function checkGrammar(text){
   });
   if (!res.ok) throw new Error('LanguageTool request failed: ' + res.status);
   const data = await res.json();
-  return data.matches || [];
+  return (data.matches || []).map(m => ({
+    flagged: text.slice(m.offset, m.offset + m.length).trim(),
+    suggestion: m.replacements && m.replacements[0] ? m.replacements[0].value : '',
+    message: m.message || '',
+  }));
+}
+
+async function checkGrammarWithClaude(text){
+  const res = await fetch(window.AI_CHECK_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error('AI check function failed: ' + res.status);
+  const data = await res.json();
+  return (data.suggestions || []).map(s => ({
+    flagged: (s.original || '').trim(),
+    suggestion: s.suggestion || '',
+    message: s.explanation || '',
+  }));
+}
+
+async function checkGrammar(text){
+  return aiEndpointConfigured() ? checkGrammarWithClaude(text) : checkGrammarWithLanguageTool(text);
 }
 
 function appendToTeacherComment(line){
@@ -2189,13 +2220,11 @@ function appendToTeacherComment(line){
   ta.value = ta.value.trim() ? (ta.value.trim() + '\n' + line) : line;
 }
 
-let aiCheckText = '';
 let aiCheckQueue = [];
 let aiCheckIndex = 0;
 
-function renderAiCheckResults(text, matches){
-  aiCheckText = text;
-  aiCheckQueue = matches.slice(0, 30);
+function renderAiCheckResults(suggestions){
+  aiCheckQueue = suggestions.slice(0, 30);
   aiCheckIndex = 0;
 
   const resultsBox = $('#ai-check-results');
@@ -2234,18 +2263,18 @@ function renderAiCheckStep(){
     return;
   }
 
-  const m = aiCheckQueue[aiCheckIndex];
-  const flagged = aiCheckText.slice(m.offset, m.offset + m.length);
-  const suggestion = m.replacements && m.replacements[0] ? m.replacements[0].value : '';
+  const s = aiCheckQueue[aiCheckIndex];
+  const flagged = s.flagged;
+  const suggestion = s.suggestion;
   const noteLine = suggestion
-    ? `• "${flagged.trim()}" → "${suggestion}" (${m.message || ''})`
-    : `• "${flagged.trim()}": ${m.message || ''}`;
+    ? `• "${flagged}" → "${suggestion}" (${s.message || ''})`
+    : `• "${flagged}": ${s.message || ''}`;
 
   resultsBox.appendChild(el('div', 'ai-check-summary', `<span class="ai-check-count">${aiCheckIndex + 1} / ${aiCheckQueue.length}번째 제안</span>`));
 
   resultsBox.appendChild(el('div', 'ai-suggestion-card', `
-    <div class="ai-suggestion-issue">${escapeHtml(flagged.trim())}</div>
-    <div class="ai-suggestion-desc">${escapeHtml(m.message || '')}</div>
+    <div class="ai-suggestion-issue">${escapeHtml(flagged)}</div>
+    <div class="ai-suggestion-desc">${escapeHtml(s.message || '')}</div>
     ${suggestion ? `<div class="ai-suggestion-fix"><span>💡 "${escapeHtml(suggestion)}"</span></div>` : ''}
   `));
 
@@ -2275,8 +2304,8 @@ async function runAiCheck(){
   btn.disabled = true;
   btn.textContent = '확인 중...';
   try {
-    const matches = await checkGrammar(text);
-    renderAiCheckResults(text, matches);
+    const suggestions = await checkGrammar(text);
+    renderAiCheckResults(suggestions);
   } catch (e) {
     showToast('첨삭 서비스에 연결하지 못했어요. 잠시 후 다시 시도해주세요.');
   } finally {
