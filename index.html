@@ -305,6 +305,20 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .teacher-comment-box textarea { width: 100%; min-height: 80px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.65rem; font-size: 13.5px; line-height: 1.6; }
 .save-comment-btn { margin-top: 0.7rem; width: 100%; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); padding: 0.65rem; font-size: 13px; font-weight: 700; }
 
+.ai-check-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem 1.1rem; margin-top: 1rem; }
+.ai-check-btn { width: 100%; background: var(--accent-strong); color: #fff; border: none; border-radius: var(--radius-md); padding: 0.7rem; font-size: 13.5px; font-weight: 700; }
+.ai-check-btn:disabled { opacity: 0.6; }
+.ai-check-results { margin-top: 0.9rem; }
+.ai-check-summary { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.7rem; }
+.ai-check-count { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+.ai-add-all-btn { flex: none; background: var(--surface-2); color: var(--ink-soft); border: none; border-radius: 999px; padding: 0.4rem 0.75rem; font-size: 11.5px; font-weight: 700; }
+.ai-suggestion-card { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 0.7rem 0.85rem; margin-bottom: 0.55rem; }
+.ai-suggestion-issue { font-size: 13px; font-weight: 700; color: var(--danger); text-decoration: line-through; text-decoration-color: var(--danger); }
+.ai-suggestion-desc { font-size: 12px; color: var(--ink-soft); margin-top: 3px; line-height: 1.5; }
+.ai-suggestion-fix { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 13px; font-weight: 700; color: var(--accent-strong); margin-top: 0.5rem; background: var(--accent-tint); border-radius: var(--radius-sm); padding: 0.5rem 0.65rem; }
+.ai-suggestion-fix button { flex: none; background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 0.35rem 0.8rem; font-size: 11px; font-weight: 700; }
+.ai-suggestion-empty { font-size: 13px; color: var(--accent-strong); text-align: center; padding: 0.8rem; }
+
 /* ---------- Modal ---------- */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(10,16,13,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 20;
@@ -686,6 +700,12 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="back-btn" id="btn-teacher-detail-back">← 대시보드로</button>
     </div>
     <div class="diary-page" id="teacher-diary-page"></div>
+
+    <div class="ai-check-box">
+      <div class="section-label" style="margin-top:0;">✨ AI 문법 · 철자 첨삭</div>
+      <button class="ai-check-btn" id="btn-ai-check" type="button">✨ AI 첨삭 받기</button>
+      <div id="ai-check-results" class="ai-check-results hidden"></div>
+    </div>
 
     <div class="comments-section">
       <div class="section-label" style="margin-top:0;">💬 학생들 댓글</div>
@@ -2121,6 +2141,8 @@ function openTeacherDetail(id){
   `;
   $('#input-reviewed').checked = !!entry.reviewed;
   $('#input-teacher-comment').value = entry.teacherComment || '';
+  $('#ai-check-results').classList.add('hidden');
+  $('#ai-check-results').innerHTML = '';
   showView('teacher-detail');
   loadTeacherComments();
 }
@@ -2136,6 +2158,105 @@ async function loadTeacherComments(){
     canDelete: () => true,
     onChange: loadTeacherComments,
   });
+}
+
+/* ---------------- AI grammar/spelling check (teacher review) ---------------- */
+
+function entryPlainText(entry){
+  if (!entry) return '';
+  return entry.mode === 'freeform' ? (entry.text || '') : (entry.lines || []).filter(l => l && l.trim()).join('\n');
+}
+
+async function checkGrammar(text){
+  const params = new URLSearchParams();
+  params.set('text', text);
+  params.set('language', 'en-US');
+  const res = await fetch('https://api.languagetool.org/v2/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  if (!res.ok) throw new Error('LanguageTool request failed: ' + res.status);
+  const data = await res.json();
+  return data.matches || [];
+}
+
+function appendToTeacherComment(line){
+  const ta = $('#input-teacher-comment');
+  ta.value = ta.value.trim() ? (ta.value.trim() + '\n' + line) : line;
+}
+
+function renderAiCheckResults(text, matches){
+  const resultsBox = $('#ai-check-results');
+  resultsBox.classList.remove('hidden');
+  resultsBox.innerHTML = '';
+
+  if (matches.length === 0) {
+    resultsBox.appendChild(el('div', 'ai-suggestion-empty', '👏 훌륭해요! 문법·철자 오류를 찾지 못했어요.'));
+    const praiseBtn = el('button', 'ai-add-all-btn', '칭찬 코멘트 추가');
+    praiseBtn.type = 'button';
+    praiseBtn.style.display = 'block';
+    praiseBtn.style.margin = '0.6rem auto 0';
+    praiseBtn.addEventListener('click', () => {
+      appendToTeacherComment('Great job! I found no grammar or spelling errors. 👍');
+      showToast('코멘트에 추가했어요.');
+    });
+    resultsBox.appendChild(praiseBtn);
+    return;
+  }
+
+  const summary = el('div', 'ai-check-summary', `<span class="ai-check-count">${matches.length}개의 제안을 찾았어요</span>`);
+  const addAllBtn = el('button', 'ai-add-all-btn', '전체 코멘트에 추가');
+  addAllBtn.type = 'button';
+  summary.appendChild(addAllBtn);
+  resultsBox.appendChild(summary);
+
+  const noteLines = [];
+  matches.slice(0, 20).forEach(m => {
+    const flagged = text.slice(m.offset, m.offset + m.length);
+    const suggestion = m.replacements && m.replacements[0] ? m.replacements[0].value : '';
+    const noteLine = suggestion
+      ? `• "${flagged.trim()}" → "${suggestion}" (${m.message || ''})`
+      : `• "${flagged.trim()}": ${m.message || ''}`;
+    noteLines.push(noteLine);
+
+    const card = el('div', 'ai-suggestion-card', `
+      <div class="ai-suggestion-issue">${escapeHtml(flagged.trim())}</div>
+      <div class="ai-suggestion-desc">${escapeHtml(m.message || '')}</div>
+      ${suggestion ? `<div class="ai-suggestion-fix"><span>💡 "${escapeHtml(suggestion)}"</span><button type="button">코멘트에 추가</button></div>` : ''}
+    `);
+    if (suggestion) {
+      card.querySelector('.ai-suggestion-fix button').addEventListener('click', () => {
+        appendToTeacherComment(noteLine);
+        showToast('코멘트에 추가했어요.');
+      });
+    }
+    resultsBox.appendChild(card);
+  });
+
+  addAllBtn.addEventListener('click', () => {
+    appendToTeacherComment(noteLines.join('\n'));
+    showToast('전체 제안을 코멘트에 추가했어요.');
+  });
+}
+
+async function runAiCheck(){
+  const entry = dashboardEntries.find(e => e.id === teacherEditingId);
+  const text = entryPlainText(entry);
+  const btn = $('#btn-ai-check');
+  if (!text.trim()) { showToast('첨삭할 내용이 없어요.'); return; }
+
+  btn.disabled = true;
+  btn.textContent = '확인 중...';
+  try {
+    const matches = await checkGrammar(text);
+    renderAiCheckResults(text, matches);
+  } catch (e) {
+    showToast('첨삭 서비스에 연결하지 못했어요. 잠시 후 다시 시도해주세요.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ AI 첨삭 받기';
+  }
 }
 
 /* ---------------- Event wiring ---------------- */
@@ -2291,6 +2412,7 @@ $('#btn-cal-prev').addEventListener('click', () => shiftCalendarMonth(-1));
 $('#btn-cal-next').addEventListener('click', () => shiftCalendarMonth(1));
 $('#btn-clear-date-filter').addEventListener('click', () => { dashboardFilterDate = null; renderDashboard(); });
 $('#btn-teacher-detail-back').addEventListener('click', () => showView('teacher-dashboard'));
+$('#btn-ai-check').addEventListener('click', runAiCheck);
 $('#btn-save-review').addEventListener('click', async () => {
   const reviewed = $('#input-reviewed').checked;
   const comment = $('#input-teacher-comment').value.trim();
