@@ -52,6 +52,16 @@ service cloud.firestore {
             get(/databases/$(database)/documents/classes/$(classId)).data.teacherUid == request.auth.uid
           );
         }
+
+        // 일기를 쓴 학생과 담당 교사만 읽고 쓸 수 있는 비공개 대화 (같은 반 친구에게는 안 보임).
+        match /feedback/{feedbackId} {
+          allow read, create: if request.auth != null && (
+            get(/databases/$(database)/documents/classes/$(classId)/entries/$(entryId)).data.ownerUid == request.auth.uid ||
+            get(/databases/$(database)/documents/classes/$(classId)).data.teacherUid == request.auth.uid
+          ) && (request.method != 'create' || request.resource.data.ownerUid == request.auth.uid);
+          allow update: if false;
+          allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+        }
       }
     }
   }

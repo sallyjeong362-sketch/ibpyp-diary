@@ -298,6 +298,15 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .comment-input-row input { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 0.65rem 0.8rem; font-size: 13.5px; color: var(--ink); }
 .comment-input-row button { flex: none; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-md); padding: 0.65rem 1.1rem; font-size: 13px; font-weight: 700; }
 
+.feedback-thread-section { margin-top: 1.2rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem 1.1rem; }
+.feedback-thread-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.8rem; max-height: 320px; overflow-y: auto; padding: 0.15rem; }
+.feedback-bubble { max-width: 82%; padding: 0.55rem 0.75rem; border-radius: 14px; font-size: 13.5px; line-height: 1.5; }
+.feedback-bubble .role-label { font-size: 10.5px; font-weight: 700; margin-bottom: 2px; opacity: 0.75; }
+.feedback-bubble .text { overflow-wrap: anywhere; }
+.feedback-bubble .time { font-size: 10px; opacity: 0.6; margin-top: 3px; }
+.feedback-bubble.from-me { align-self: flex-end; background: var(--cta); color: var(--cta-ink); border-bottom-right-radius: 4px; }
+.feedback-bubble.from-other { align-self: flex-start; background: var(--surface-2); color: var(--ink); border-bottom-left-radius: 4px; }
+
 .teacher-comment-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem 1.1rem; margin-top: 1rem; }
 .reviewed-toggle { display: flex; align-items: center; gap: 0.55rem; font-size: 13.5px; font-weight: 700; }
 .reviewed-toggle input { width: 18px; height: 18px; }
@@ -371,7 +380,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
   #view-detail { position: absolute; left: 0; top: 0; width: 100%; }
   #view-teacher-export, #view-teacher-export * { visibility: visible; }
   #view-teacher-export { position: absolute; left: 0; top: 0; width: 100%; }
-  .detail-actions, .back-btn, .export-controls, .export-print-row, .form-hint, .topbar, .comments-section { display: none !important; }
+  .detail-actions, .back-btn, .export-controls, .export-print-row, .form-hint, .topbar, .comments-section, .feedback-thread-section { display: none !important; }
   .diary-page { box-shadow: none; border: none; }
   .export-entry { page-break-inside: avoid; page-break-after: always; }
   .export-entry:last-child { page-break-after: auto; }
@@ -595,6 +604,15 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="delete-btn" id="btn-detail-delete">🗑️ 삭제</button>
     </div>
 
+    <div class="feedback-thread-section hidden" id="student-feedback-section">
+      <div class="section-label" style="margin-top:0;">📩 선생님과의 대화</div>
+      <div id="student-feedback-list" class="feedback-thread-list"></div>
+      <div class="comment-input-row">
+        <input type="text" id="input-student-feedback-text" placeholder="선생님께 답장해보세요 (고친 문장을 다시 써봐도 좋아요!)" maxlength="300">
+        <button id="btn-add-student-feedback" type="button">보내기</button>
+      </div>
+    </div>
+
     <div class="comments-section">
       <div class="section-label" style="margin-top:0;">💬 댓글</div>
       <div id="comments-list" class="comments-list"></div>
@@ -710,6 +728,15 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="ai-check-btn" id="btn-ai-check" type="button">✨ AI 첨삭 받기</button>
       <div class="ai-engine-label" id="ai-engine-label"></div>
       <div id="ai-check-results" class="ai-check-results hidden"></div>
+    </div>
+
+    <div class="feedback-thread-section">
+      <div class="section-label" style="margin-top:0;">📩 이 학생과의 대화</div>
+      <div id="teacher-feedback-list" class="feedback-thread-list"></div>
+      <div class="comment-input-row">
+        <input type="text" id="input-teacher-feedback-text" placeholder="학생에게 답장해보세요" maxlength="300">
+        <button id="btn-add-teacher-feedback" type="button">보내기</button>
+      </div>
     </div>
 
     <div class="comments-section">
@@ -942,6 +969,17 @@ function createFirestoreBackend(db, sdk, getUid){
     async deleteComment(code, entryId, commentId){
       await deleteDoc(doc(db, 'classes', code, 'entries', entryId, 'comments', commentId));
     },
+    async addFeedback(code, entryId, item){
+      const ref = await addDoc(collection(db, 'classes', code, 'entries', entryId, 'feedback'), { ...item, ownerUid: getUid(), createdAt: serverTimestamp() });
+      return ref.id;
+    },
+    async listFeedback(code, entryId){
+      const snap = await getDocs(collection(db, 'classes', code, 'entries', entryId, 'feedback'));
+      const arr = [];
+      snap.forEach(d => arr.push(Object.assign({ id: d.id }, d.data())));
+      arr.sort((a, b) => commentSortKey(a) - commentSortKey(b));
+      return arr;
+    },
   };
 }
 
@@ -1030,6 +1068,24 @@ function createMockBackend(getIdentity){
       if (!c || !c.entries[entryId] || !c.entries[entryId].comments) return;
       delete c.entries[entryId].comments[commentId];
       save(dbObj);
+    },
+    async addFeedback(code, entryId, item){
+      const dbObj = load();
+      const c = dbObj.classes[code];
+      if (!c || !c.entries[entryId]) throw new Error('일기를 찾을 수 없어요.');
+      if (!c.entries[entryId].feedback) c.entries[entryId].feedback = {};
+      const id = uid();
+      c.entries[entryId].feedback[id] = Object.assign({ id, ownerUid: getUid(), createdAt: new Date().toISOString() }, item);
+      save(dbObj);
+      return id;
+    },
+    async listFeedback(code, entryId){
+      const dbObj = load();
+      const c = dbObj.classes[code];
+      if (!c || !c.entries[entryId] || !c.entries[entryId].feedback) return [];
+      const arr = Object.values(c.entries[entryId].feedback);
+      arr.sort((a, b) => commentSortKey(a) - commentSortKey(b));
+      return arr;
     },
   };
 }
@@ -1696,6 +1752,32 @@ async function loadStudentComments(){
   });
 }
 
+function renderFeedbackThread(container, items, viewerRole){
+  container.innerHTML = '';
+  if (items.length === 0) {
+    container.appendChild(el('div', 'comment-empty', '아직 대화가 없어요. 메시지를 보내보세요!'));
+    return;
+  }
+  items.forEach(item => {
+    const mine = item.role === viewerRole;
+    const roleLabel = item.role === 'teacher' ? '🍎 선생님' : ('🧑‍🎓 ' + (item.authorName || ''));
+    const bubble = el('div', 'feedback-bubble ' + (mine ? 'from-me' : 'from-other'), `
+      <div class="role-label">${escapeHtml(roleLabel)}</div>
+      <div class="text">${escapeHtml(item.text || '')}</div>
+      <div class="time">${escapeHtml(formatCommentTime(item.createdAt))}</div>
+    `);
+    container.appendChild(bubble);
+  });
+  container.scrollTop = container.scrollHeight;
+}
+
+async function loadStudentFeedback(){
+  const container = $('#student-feedback-list');
+  container.innerHTML = '<div class="comment-empty">불러오는 중...</div>';
+  const items = await backend.listFeedback(currentClassCode, editingId);
+  renderFeedbackThread(container, items, 'student');
+}
+
 function openDetail(id){
   const entry = entries.find(e => e.id === id);
   if (!entry) return;
@@ -1725,8 +1807,10 @@ function openDetail(id){
   `;
   $('#btn-detail-edit').classList.toggle('hidden', !own);
   $('#btn-detail-delete').classList.toggle('hidden', !own);
+  $('#student-feedback-section').classList.toggle('hidden', !own);
   showView('detail');
   loadStudentComments();
+  if (own) loadStudentFeedback();
 }
 
 async function deleteCurrentEntry(){
@@ -2151,6 +2235,7 @@ function openTeacherDetail(id){
   $('#ai-engine-label').textContent = aiEndpointConfigured() ? '🤖 Claude AI로 첨삭해요' : '📝 무료 문법검사기(LanguageTool)로 첨삭해요';
   showView('teacher-detail');
   loadTeacherComments();
+  loadTeacherFeedback();
 }
 
 async function loadTeacherComments(){
@@ -2164,6 +2249,13 @@ async function loadTeacherComments(){
     canDelete: () => true,
     onChange: loadTeacherComments,
   });
+}
+
+async function loadTeacherFeedback(){
+  const container = $('#teacher-feedback-list');
+  container.innerHTML = '<div class="comment-empty">불러오는 중...</div>';
+  const items = await backend.listFeedback(teacherClassCode, teacherEditingId);
+  renderFeedbackThread(container, items, 'teacher');
 }
 
 /* ---------------- AI grammar/spelling check (teacher review) ---------------- */
@@ -2417,6 +2509,17 @@ $('#btn-add-comment').addEventListener('click', async () => {
 $('#input-comment-text').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); $('#btn-add-comment').click(); }
 });
+$('#btn-add-student-feedback').addEventListener('click', async () => {
+  const input = $('#input-student-feedback-text');
+  const text = input.value.trim();
+  if (!text) return;
+  await backend.addFeedback(currentClassCode, editingId, { role: 'student', authorName: currentStudentName, text });
+  input.value = '';
+  await loadStudentFeedback();
+});
+$('#input-student-feedback-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('#btn-add-student-feedback').click(); }
+});
 $('#btn-editor-back').addEventListener('click', cancelEditor);
 $('#btn-editor-cancel').addEventListener('click', cancelEditor);
 $('#btn-save-entry').addEventListener('click', saveEntry);
@@ -2468,6 +2571,17 @@ $('#btn-cal-next').addEventListener('click', () => shiftCalendarMonth(1));
 $('#btn-clear-date-filter').addEventListener('click', () => { dashboardFilterDate = null; renderDashboard(); });
 $('#btn-teacher-detail-back').addEventListener('click', () => showView('teacher-dashboard'));
 $('#btn-ai-check').addEventListener('click', runAiCheck);
+$('#btn-add-teacher-feedback').addEventListener('click', async () => {
+  const input = $('#input-teacher-feedback-text');
+  const text = input.value.trim();
+  if (!text) return;
+  await backend.addFeedback(teacherClassCode, teacherEditingId, { role: 'teacher', authorName: '선생님', text });
+  input.value = '';
+  await loadTeacherFeedback();
+});
+$('#input-teacher-feedback-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('#btn-add-teacher-feedback').click(); }
+});
 $('#btn-save-review').addEventListener('click', async () => {
   const reviewed = $('#input-reviewed').checked;
   const comment = $('#input-teacher-comment').value.trim();
