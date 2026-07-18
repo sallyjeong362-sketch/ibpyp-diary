@@ -318,6 +318,9 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .ai-suggestion-fix { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 13px; font-weight: 700; color: var(--accent-strong); margin-top: 0.5rem; background: var(--accent-tint); border-radius: var(--radius-sm); padding: 0.5rem 0.65rem; }
 .ai-suggestion-fix button { flex: none; background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 0.35rem 0.8rem; font-size: 11px; font-weight: 700; }
 .ai-suggestion-empty { font-size: 13px; color: var(--accent-strong); text-align: center; padding: 0.8rem; }
+.ai-check-nav { display: flex; gap: 0.5rem; margin-top: 0.7rem; }
+.ai-ignore-btn { flex: 1; background: var(--surface-2); color: var(--ink-soft); border: none; border-radius: var(--radius-sm); padding: 0.65rem; font-size: 12.5px; font-weight: 700; }
+.ai-apply-btn { flex: 1; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); padding: 0.65rem; font-size: 12.5px; font-weight: 700; }
 
 /* ---------- Modal ---------- */
 .modal-backdrop {
@@ -2186,12 +2189,20 @@ function appendToTeacherComment(line){
   ta.value = ta.value.trim() ? (ta.value.trim() + '\n' + line) : line;
 }
 
+let aiCheckText = '';
+let aiCheckQueue = [];
+let aiCheckIndex = 0;
+
 function renderAiCheckResults(text, matches){
+  aiCheckText = text;
+  aiCheckQueue = matches.slice(0, 30);
+  aiCheckIndex = 0;
+
   const resultsBox = $('#ai-check-results');
   resultsBox.classList.remove('hidden');
-  resultsBox.innerHTML = '';
 
-  if (matches.length === 0) {
+  if (aiCheckQueue.length === 0) {
+    resultsBox.innerHTML = '';
     resultsBox.appendChild(el('div', 'ai-suggestion-empty', '👏 훌륭해요! 문법·철자 오류를 찾지 못했어요.'));
     const praiseBtn = el('button', 'ai-add-all-btn', '칭찬 코멘트 추가');
     praiseBtn.type = 'button';
@@ -2205,38 +2216,53 @@ function renderAiCheckResults(text, matches){
     return;
   }
 
-  const summary = el('div', 'ai-check-summary', `<span class="ai-check-count">${matches.length}개의 제안을 찾았어요</span>`);
-  const addAllBtn = el('button', 'ai-add-all-btn', '전체 코멘트에 추가');
-  addAllBtn.type = 'button';
-  summary.appendChild(addAllBtn);
-  resultsBox.appendChild(summary);
+  renderAiCheckStep();
+}
 
-  const noteLines = [];
-  matches.slice(0, 20).forEach(m => {
-    const flagged = text.slice(m.offset, m.offset + m.length);
-    const suggestion = m.replacements && m.replacements[0] ? m.replacements[0].value : '';
-    const noteLine = suggestion
-      ? `• "${flagged.trim()}" → "${suggestion}" (${m.message || ''})`
-      : `• "${flagged.trim()}": ${m.message || ''}`;
-    noteLines.push(noteLine);
+function renderAiCheckStep(){
+  const resultsBox = $('#ai-check-results');
+  resultsBox.innerHTML = '';
 
-    const card = el('div', 'ai-suggestion-card', `
-      <div class="ai-suggestion-issue">${escapeHtml(flagged.trim())}</div>
-      <div class="ai-suggestion-desc">${escapeHtml(m.message || '')}</div>
-      ${suggestion ? `<div class="ai-suggestion-fix"><span>💡 "${escapeHtml(suggestion)}"</span><button type="button">코멘트에 추가</button></div>` : ''}
-    `);
-    if (suggestion) {
-      card.querySelector('.ai-suggestion-fix button').addEventListener('click', () => {
-        appendToTeacherComment(noteLine);
-        showToast('코멘트에 추가했어요.');
-      });
-    }
-    resultsBox.appendChild(card);
-  });
+  if (aiCheckIndex >= aiCheckQueue.length) {
+    resultsBox.appendChild(el('div', 'ai-suggestion-empty', `✅ 첨삭 검토를 마쳤어요! (총 ${aiCheckQueue.length}개 확인)`));
+    const restartBtn = el('button', 'ai-add-all-btn', '처음부터 다시 보기');
+    restartBtn.type = 'button';
+    restartBtn.style.display = 'block';
+    restartBtn.style.margin = '0.6rem auto 0';
+    restartBtn.addEventListener('click', () => { aiCheckIndex = 0; renderAiCheckStep(); });
+    resultsBox.appendChild(restartBtn);
+    return;
+  }
 
-  addAllBtn.addEventListener('click', () => {
-    appendToTeacherComment(noteLines.join('\n'));
-    showToast('전체 제안을 코멘트에 추가했어요.');
+  const m = aiCheckQueue[aiCheckIndex];
+  const flagged = aiCheckText.slice(m.offset, m.offset + m.length);
+  const suggestion = m.replacements && m.replacements[0] ? m.replacements[0].value : '';
+  const noteLine = suggestion
+    ? `• "${flagged.trim()}" → "${suggestion}" (${m.message || ''})`
+    : `• "${flagged.trim()}": ${m.message || ''}`;
+
+  resultsBox.appendChild(el('div', 'ai-check-summary', `<span class="ai-check-count">${aiCheckIndex + 1} / ${aiCheckQueue.length}번째 제안</span>`));
+
+  resultsBox.appendChild(el('div', 'ai-suggestion-card', `
+    <div class="ai-suggestion-issue">${escapeHtml(flagged.trim())}</div>
+    <div class="ai-suggestion-desc">${escapeHtml(m.message || '')}</div>
+    ${suggestion ? `<div class="ai-suggestion-fix"><span>💡 "${escapeHtml(suggestion)}"</span></div>` : ''}
+  `));
+
+  const navRow = el('div', 'ai-check-nav');
+  const ignoreBtn = el('button', 'ai-ignore-btn', '무시하고 다음');
+  ignoreBtn.type = 'button';
+  const applyBtn = el('button', 'ai-apply-btn', suggestion ? '코멘트에 추가하고 다음' : '다음');
+  applyBtn.type = 'button';
+  navRow.appendChild(ignoreBtn);
+  navRow.appendChild(applyBtn);
+  resultsBox.appendChild(navRow);
+
+  ignoreBtn.addEventListener('click', () => { aiCheckIndex++; renderAiCheckStep(); });
+  applyBtn.addEventListener('click', () => {
+    if (suggestion) { appendToTeacherComment(noteLine); showToast('코멘트에 추가했어요.'); }
+    aiCheckIndex++;
+    renderAiCheckStep();
   });
 }
 
