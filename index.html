@@ -113,9 +113,11 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .list-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .growth-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1.2rem 1.1rem; margin-bottom: 1.1rem; text-align: center; box-shadow: var(--shadow); }
+.growth-stats-row { display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 0.8rem; }
+.growth-stat-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.75rem; font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+.growth-stat-chip b { color: var(--accent-strong); font-variant-numeric: tabular-nums; }
 .growth-card .tree-emoji { font-size: 56px; line-height: 1; }
 .growth-card .stage-label { font-size: 15px; font-weight: 800; margin-top: 0.3rem; }
-.growth-card .count-text { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
 .growth-progress-track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 0.9rem; }
 .growth-progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .4s ease; width: 0%; }
 .growth-progress-text { font-size: 11.5px; color: var(--ink-faint); margin-top: 0.5rem; }
@@ -523,9 +525,12 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
     </div>
 
     <div class="growth-card">
+      <div class="growth-stats-row">
+        <span class="growth-stat-chip">⭐ <b id="growth-points">0</b>P</span>
+        <span class="growth-stat-chip">🔥 <b id="growth-streak">0</b>일 연속</span>
+      </div>
       <div class="tree-emoji" id="growth-emoji">🌰</div>
       <div class="stage-label" id="growth-label">씨앗</div>
-      <div class="count-text" id="growth-count-text">지금까지 일기 0개를 썼어요</div>
       <div class="growth-progress-track" id="growth-progress-track">
         <div class="growth-progress-fill" id="growth-progress-fill"></div>
       </div>
@@ -792,23 +797,39 @@ const LEVELS = [
 ];
 const LEVEL_MAP = Object.fromEntries(LEVELS.map(l => [l.id, l]));
 
+const POINTS_PER_ENTRY = 10;
 const GROWTH_STAGES = [
-  { min:0,  emoji:'🌰', label:'씨앗',        size:34 },
-  { min:1,  emoji:'🌱', label:'새싹',        size:38 },
-  { min:3,  emoji:'🌿', label:'떡잎',        size:42 },
-  { min:6,  emoji:'🪴', label:'어린나무',    size:46 },
-  { min:10, emoji:'🌳', label:'나무',        size:52 },
-  { min:15, emoji:'🌲', label:'무성한 나무', size:58 },
-  { min:20, emoji:'🌳🍎', label:'열매 맺은 나무', size:52 },
-  { min:30, emoji:'🌳🌸', label:'만개한 나무',    size:52 },
+  { min:0,   emoji:'🌰', label:'씨앗',        size:34 },
+  { min:10,  emoji:'🌱', label:'새싹',        size:38 },
+  { min:30,  emoji:'🌿', label:'떡잎',        size:42 },
+  { min:60,  emoji:'🪴', label:'어린나무',    size:46 },
+  { min:100, emoji:'🌳', label:'나무',        size:52 },
+  { min:150, emoji:'🌲', label:'무성한 나무', size:58 },
+  { min:200, emoji:'🌳🍎', label:'열매 맺은 나무', size:52 },
+  { min:300, emoji:'🌳🌸', label:'만개한 나무',    size:52 },
 ];
-function getGrowthStage(count){
+function getGrowthStage(points){
   let stage = GROWTH_STAGES[0];
   let idx = 0;
   for (let i = 0; i < GROWTH_STAGES.length; i++) {
-    if (count >= GROWTH_STAGES[i].min) { stage = GROWTH_STAGES[i]; idx = i; }
+    if (points >= GROWTH_STAGES[i].min) { stage = GROWTH_STAGES[i]; idx = i; }
   }
   return { stage, idx, next: GROWTH_STAGES[idx + 1] || null };
+}
+function dateKeyFor(d){
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
+function computeStreak(dateStrings){
+  const daySet = new Set(dateStrings.filter(Boolean));
+  let streak = 0;
+  const cursor = new Date();
+  for (;;) {
+    if (!daySet.has(dateKeyFor(cursor))) break;
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
 }
 
 const MOODS = ['😄', '🙂', '😐', '😢', '😠'];
@@ -1245,9 +1266,7 @@ function formatDate(dateStr){
   return d.toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
 }
 function todayStr(){
-  const d = new Date();
-  const off = d.getTimezoneOffset();
-  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+  return dateKeyFor(new Date());
 }
 let toastTimer = null;
 function showToast(msg){
@@ -1353,21 +1372,23 @@ async function refreshStudentList(){
 
 async function refreshMyGrowth(){
   const mine = await backend.listEntries(currentClassCode, { studentName: currentStudentName });
-  renderGrowthCard(mine.length);
+  const streak = computeStreak(mine.map(e => e.date));
+  renderGrowthCard(mine.length * POINTS_PER_ENTRY, streak);
 }
 
-function renderGrowthCard(count){
-  const { stage, next } = getGrowthStage(count);
+function renderGrowthCard(points, streak){
+  const { stage, next } = getGrowthStage(points);
+  $('#growth-points').textContent = points;
+  $('#growth-streak').textContent = streak;
   $('#growth-emoji').textContent = stage.emoji;
   $('#growth-label').textContent = stage.label;
-  $('#growth-count-text').textContent = `지금까지 일기 ${count}개를 썼어요`;
   if (next) {
     const rangeSize = next.min - stage.min;
-    const progressInStage = count - stage.min;
+    const progressInStage = points - stage.min;
     const pct = Math.max(0, Math.min(100, Math.round((progressInStage / rangeSize) * 100)));
     $('#growth-progress-fill').style.width = pct + '%';
     $('#growth-progress-track').classList.remove('hidden');
-    $('#growth-progress-text').textContent = `다음 단계(${next.label})까지 ${next.min - count}개 남았어요!`;
+    $('#growth-progress-text').textContent = `다음 단계(${next.emoji} ${next.label})까지 ${next.min - points}P 남았어요!`;
   } else {
     $('#growth-progress-track').classList.add('hidden');
     $('#growth-progress-text').textContent = '최고 단계예요! 정말 대단해요 🎉';
@@ -1384,12 +1405,13 @@ function renderGardenGrid(container, allEntries){
     return;
   }
   names.forEach(name => {
-    const { stage } = getGrowthStage(counts[name]);
+    const points = counts[name] * POINTS_PER_ENTRY;
+    const { stage } = getGrowthStage(points);
     const card = el('div', 'garden-card', `
       <div class="tree" style="font-size:${stage.size}px;">${stage.emoji}</div>
       <div class="name">${escapeHtml(name)}</div>
       <div class="stage-label">${escapeHtml(stage.label)}</div>
-      <div class="count">${counts[name]}개</div>
+      <div class="count">${points}P</div>
     `);
     container.appendChild(card);
   });
