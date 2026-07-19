@@ -116,6 +116,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .growth-stats-row { display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 0.8rem; }
 .growth-stat-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.75rem; font-size: 12px; font-weight: 700; color: var(--ink-soft); }
 .growth-stat-chip b { color: var(--accent-strong); font-variant-numeric: tabular-nums; }
+.map-badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--accent-strong); background: var(--surface-2); border-radius: 999px; padding: 0.2rem 0.6rem; margin-bottom: 0.6rem; }
 .growth-card .tree-emoji { font-size: 56px; line-height: 1; }
 .growth-card .stage-label { font-size: 15px; font-weight: 800; margin-top: 0.3rem; }
 .growth-progress-track { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin-top: 0.9rem; }
@@ -128,6 +129,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .garden-card .name { font-size: 11.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .garden-card .stage-label { font-size: 10px; color: var(--ink-soft); margin-top: 2px; }
 .garden-card .count { font-size: 10px; color: var(--ink-faint); margin-top: 1px; }
+.garden-card .map-badge-mini { font-size: 9px; color: var(--accent-strong); font-weight: 700; margin-top: 1px; }
 
 .empty-state { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius-lg); padding: 2.2rem 1.5rem; text-align: center; color: var(--ink-soft); }
 .empty-state .emoji { font-size: 40px; margin-bottom: 0.6rem; }
@@ -529,6 +531,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
         <span class="growth-stat-chip">⭐ <b id="growth-points">0</b>P</span>
         <span class="growth-stat-chip">🔥 <b id="growth-streak">0</b>일 연속</span>
       </div>
+      <div class="map-badge" id="growth-map-badge">🗺️ 1번째 나무 정원</div>
       <div class="tree-emoji" id="growth-emoji">🌰</div>
       <div class="stage-label" id="growth-label">씨앗</div>
       <div class="growth-progress-track" id="growth-progress-track">
@@ -798,23 +801,73 @@ const LEVELS = [
 const LEVEL_MAP = Object.fromEntries(LEVELS.map(l => [l.id, l]));
 
 const POINTS_PER_ENTRY = 10;
-const GROWTH_STAGES = [
-  { min:0,   emoji:'🌰', label:'씨앗',        size:34 },
-  { min:10,  emoji:'🌱', label:'새싹',        size:38 },
-  { min:30,  emoji:'🌿', label:'떡잎',        size:42 },
-  { min:60,  emoji:'🪴', label:'어린나무',    size:46 },
-  { min:100, emoji:'🌳', label:'나무',        size:52 },
-  { min:150, emoji:'🌲', label:'무성한 나무', size:58 },
-  { min:200, emoji:'🌳🍎', label:'열매 맺은 나무', size:52 },
-  { min:300, emoji:'🌳🌸', label:'만개한 나무',    size:52 },
+// 맵마다 같은 포인트 구간(0~MAP_SPAN)에서 8단계로 자라나고, MAP_SPAN을 다 채우면
+// 다음 맵(새로운 테마)으로 넘어가서 처음부터 다시 시작해요. 그래서 "최고 단계"가
+// 없이 계속 다음 목표가 생기도록 했습니다.
+const MAP_THEMES = [
+  { name:'나무 정원', mapEmoji:'🌳', stages:[
+    { min:0,   emoji:'🌰', label:'씨앗',        size:34 },
+    { min:10,  emoji:'🌱', label:'새싹',        size:38 },
+    { min:30,  emoji:'🌿', label:'떡잎',        size:42 },
+    { min:60,  emoji:'🪴', label:'어린나무',    size:46 },
+    { min:100, emoji:'🌳', label:'나무',        size:52 },
+    { min:150, emoji:'🌲', label:'무성한 나무', size:58 },
+    { min:200, emoji:'🌳🍎', label:'열매 맺은 나무', size:52 },
+    { min:300, emoji:'🌳🌸', label:'만개한 나무',    size:52 },
+  ]},
+  { name:'바다 여행', mapEmoji:'🌊', stages:[
+    { min:0,   emoji:'🥚', label:'물고기 알',   size:34 },
+    { min:10,  emoji:'🐠', label:'아기 물고기', size:38 },
+    { min:30,  emoji:'🐡', label:'복어',        size:42 },
+    { min:60,  emoji:'🦑', label:'오징어',      size:46 },
+    { min:100, emoji:'🐬', label:'돌고래',      size:52 },
+    { min:150, emoji:'🐳', label:'고래',        size:58 },
+    { min:200, emoji:'🏝️', label:'산호섬',      size:52 },
+    { min:300, emoji:'🌊', label:'파도치는 바다', size:52 },
+  ]},
+  { name:'우주 탐험', mapEmoji:'🚀', stages:[
+    { min:0,   emoji:'🌑', label:'작은 운석',   size:34 },
+    { min:10,  emoji:'🛰️', label:'인공위성',    size:38 },
+    { min:30,  emoji:'🪐', label:'작은 행성',   size:42 },
+    { min:60,  emoji:'☄️', label:'혜성',        size:46 },
+    { min:100, emoji:'🌠', label:'유성우',      size:52 },
+    { min:150, emoji:'🚀', label:'우주선',      size:58 },
+    { min:200, emoji:'🌌', label:'은하수',      size:52 },
+    { min:300, emoji:'🌟', label:'별자리 완성', size:52 },
+  ]},
+  { name:'등산 여행', mapEmoji:'🏔️', stages:[
+    { min:0,   emoji:'🥾', label:'등산화 신기', size:34 },
+    { min:10,  emoji:'🌳', label:'숲길 걷기',   size:38 },
+    { min:30,  emoji:'⛰️', label:'언덕 넘기',   size:42 },
+    { min:60,  emoji:'🏕️', label:'산중턱 캠프', size:46 },
+    { min:100, emoji:'🌄', label:'해돋이 보기', size:52 },
+    { min:150, emoji:'❄️', label:'만년설 지대', size:58 },
+    { min:200, emoji:'🏔️', label:'정상 정복',   size:52 },
+    { min:300, emoji:'🎌', label:'깃발 꽂기',   size:52 },
+  ]},
 ];
-function getGrowthStage(points){
-  let stage = GROWTH_STAGES[0];
+const MAP_SPAN = MAP_THEMES[0].stages[MAP_THEMES[0].stages.length - 1].min; // 300
+
+function getGrowthProgress(points){
+  const mapIndex = Math.max(0, Math.floor(points / MAP_SPAN));
+  const pointsInMap = points - mapIndex * MAP_SPAN;
+  const theme = MAP_THEMES[mapIndex % MAP_THEMES.length];
+  const stages = theme.stages;
+  let stage = stages[0];
   let idx = 0;
-  for (let i = 0; i < GROWTH_STAGES.length; i++) {
-    if (points >= GROWTH_STAGES[i].min) { stage = GROWTH_STAGES[i]; idx = i; }
+  for (let i = 0; i < stages.length; i++) {
+    if (pointsInMap >= stages[i].min) { stage = stages[i]; idx = i; }
   }
-  return { stage, idx, next: GROWTH_STAGES[idx + 1] || null };
+  const mapNumber = mapIndex + 1;
+  const isFinalStage = idx === stages.length - 1;
+  const nextTheme = MAP_THEMES[(mapIndex + 1) % MAP_THEMES.length];
+  const next = isFinalStage ? nextTheme.stages[0] : stages[idx + 1];
+  const nextThresholdInMap = isFinalStage ? MAP_SPAN : next.min;
+  return {
+    theme, stage, idx, mapNumber, pointsInMap,
+    next, nextIsNewMap: isFinalStage, nextMapNumber: mapNumber + 1, nextMapTheme: nextTheme,
+    nextThresholdInMap,
+  };
 }
 function dateKeyFor(d){
   const off = d.getTimezoneOffset();
@@ -1377,22 +1430,20 @@ async function refreshMyGrowth(){
 }
 
 function renderGrowthCard(points, streak){
-  const { stage, next } = getGrowthStage(points);
+  const { theme, stage, mapNumber, pointsInMap, next, nextIsNewMap, nextMapNumber, nextMapTheme, nextThresholdInMap } = getGrowthProgress(points);
   $('#growth-points').textContent = points;
   $('#growth-streak').textContent = streak;
+  $('#growth-map-badge').textContent = `🗺️ ${mapNumber}번째 ${theme.name}`;
   $('#growth-emoji').textContent = stage.emoji;
   $('#growth-label').textContent = stage.label;
-  if (next) {
-    const rangeSize = next.min - stage.min;
-    const progressInStage = points - stage.min;
-    const pct = Math.max(0, Math.min(100, Math.round((progressInStage / rangeSize) * 100)));
-    $('#growth-progress-fill').style.width = pct + '%';
-    $('#growth-progress-track').classList.remove('hidden');
-    $('#growth-progress-text').textContent = `다음 단계(${next.emoji} ${next.label})까지 ${next.min - points}P 남았어요!`;
-  } else {
-    $('#growth-progress-track').classList.add('hidden');
-    $('#growth-progress-text').textContent = '최고 단계예요! 정말 대단해요 🎉';
-  }
+  const rangeSize = nextThresholdInMap - stage.min;
+  const progressInStage = pointsInMap - stage.min;
+  const pct = Math.max(0, Math.min(100, Math.round((progressInStage / rangeSize) * 100)));
+  $('#growth-progress-fill').style.width = pct + '%';
+  const pointsLeft = nextThresholdInMap - pointsInMap;
+  $('#growth-progress-text').textContent = nextIsNewMap
+    ? `다음 맵(🗺️ ${nextMapNumber}번째 ${nextMapTheme.name} · ${next.emoji} ${next.label})까지 ${pointsLeft}P 남았어요!`
+    : `다음 단계(${next.emoji} ${next.label})까지 ${pointsLeft}P 남았어요!`;
 }
 
 function renderGardenGrid(container, allEntries){
@@ -1406,10 +1457,11 @@ function renderGardenGrid(container, allEntries){
   }
   names.forEach(name => {
     const points = counts[name] * POINTS_PER_ENTRY;
-    const { stage } = getGrowthStage(points);
+    const { stage, mapNumber } = getGrowthProgress(points);
     const card = el('div', 'garden-card', `
       <div class="tree" style="font-size:${stage.size}px;">${stage.emoji}</div>
       <div class="name">${escapeHtml(name)}</div>
+      ${mapNumber > 1 ? `<div class="map-badge-mini">🗺️ ${mapNumber}번째</div>` : ''}
       <div class="stage-label">${escapeHtml(stage.label)}</div>
       <div class="count">${points}P</div>
     `);
@@ -1512,7 +1564,19 @@ function blankDraft(){
   };
 }
 
-function openNewEntry(){
+async function openNewEntry(){
+  const mine = await backend.listEntries(currentClassCode, { studentName: currentStudentName });
+  const todayEntry = mine.find(e => e.date === todayStr());
+  if (todayEntry) {
+    showToast('오늘 일기는 이미 썼어요. 오늘 쓴 일기를 불러왔어요 ✍️');
+    draft = JSON.parse(JSON.stringify(todayEntry));
+    if (!draft.lines || draft.lines.length === 0) draft.lines = ['', '', ''];
+    editingId = todayEntry.id;
+    $('#editor-title').textContent = '오늘의 일기 수정하기';
+    showView('editor');
+    renderEditor();
+    return;
+  }
   draft = blankDraft();
   editingId = null;
   $('#editor-title').textContent = '오늘의 일기';
@@ -1726,6 +1790,13 @@ async function saveEntry(){
   if (msg) { $('#validation-msg').textContent = msg; return; }
   if (draft.photo && draft.photo.length > 900000) {
     $('#validation-msg').textContent = '사진 용량이 너무 커요. 다른 사진을 선택해주세요.';
+    return;
+  }
+
+  const mine = await backend.listEntries(currentClassCode, { studentName: currentStudentName });
+  const conflict = mine.find(e => e.date === draft.date && e.id !== editingId);
+  if (conflict) {
+    $('#validation-msg').textContent = '하루에 한 개의 일기만 쓸 수 있어요. 이미 그 날짜에 쓴 일기가 있어요.';
     return;
   }
 
