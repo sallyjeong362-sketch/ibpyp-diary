@@ -106,6 +106,8 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .code-note { font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; margin-bottom: 1.2rem; }
 
 /* ---------- List view ---------- */
+.feedback-notice { display: flex; align-items: center; gap: 8px; background: var(--warn-bg); color: var(--warn-ink); border: 1px solid var(--warn-line); border-radius: var(--radius-md); padding: 0.7rem 0.9rem; font-size: 13px; font-weight: 700; margin-bottom: 1.1rem; }
+.entry-new-badge { display: inline-flex; align-items: center; gap: 3px; background: var(--danger); color: #fff; border-radius: 999px; padding: 2px 8px; font-size: 10.5px; font-weight: 700; width: fit-content; }
 .list-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.1rem; }
 .list-tab { flex: 1; background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px; padding: 0.6rem 0.3rem; font-size: 12px; font-weight: 700; color: var(--ink-soft); }
 .list-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -510,6 +512,10 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
       <button class="new-btn" id="btn-new-entry">✏️ 새 일기</button>
     </div>
     <button class="back-btn" id="btn-student-exit" type="button" style="margin-bottom:1.1rem;">↩️ 다른 학생으로 전환</button>
+
+    <div id="feedback-notice" class="feedback-notice hidden">
+      <span id="feedback-notice-text"></span>
+    </div>
 
     <div class="growth-card">
       <div class="tree-emoji" id="growth-emoji">🌰</div>
@@ -1176,6 +1182,31 @@ function rememberClass(code, name){
   localStorage.setItem(MY_CLASSES_KEY, JSON.stringify(list));
 }
 
+const SEEN_FEEDBACK_KEY = 'ibpyp_diary_seen_feedback_v1';
+function timestampKey(ts){
+  if (!ts) return '';
+  if (typeof ts === 'string') return ts;
+  if (typeof ts.toMillis === 'function') return String(ts.toMillis());
+  if (typeof ts.seconds === 'number') return String(ts.seconds);
+  return '';
+}
+function getSeenFeedbackMap(){
+  try { return JSON.parse(localStorage.getItem(SEEN_FEEDBACK_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function seenFeedbackKey(entryId){ return currentClassCode + ':' + currentStudentName + ':' + entryId; }
+function markEntrySeen(entry){
+  if (!entry) return;
+  const map = getSeenFeedbackMap();
+  map[seenFeedbackKey(entry.id)] = timestampKey(entry.updatedAt);
+  localStorage.setItem(SEEN_FEEDBACK_KEY, JSON.stringify(map));
+}
+function hasUnseenFeedback(entry){
+  if (!entry || (!entry.reviewed && !entry.teacherComment)) return false;
+  const map = getSeenFeedbackMap();
+  return map[seenFeedbackKey(entry.id)] !== timestampKey(entry.updatedAt);
+}
+
 async function sha256Hex(str){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -1381,10 +1412,23 @@ function renderLevelLegend(){
 function renderList(){
   const list = $('#entry-list');
   const empty = $('#empty-state');
+  const notice = $('#feedback-notice');
   $('#garden-grid').classList.add('hidden');
   list.classList.remove('hidden');
   list.innerHTML = '';
   const showLegend = listScope === 'mine';
+
+  if (listScope === 'mine') {
+    const unseenCount = entries.filter(hasUnseenFeedback).length;
+    if (unseenCount > 0) {
+      notice.classList.remove('hidden');
+      $('#feedback-notice-text').textContent = `📣 선생님이 ${unseenCount}개의 일기에 댓글을 남겼어요! 확인해보세요.`;
+    } else {
+      notice.classList.add('hidden');
+    }
+  } else {
+    notice.classList.add('hidden');
+  }
 
   if (entries.length === 0) {
     empty.classList.remove('hidden');
@@ -1403,6 +1447,7 @@ function renderList(){
     const lv = LEVEL_MAP[entry.level] || LEVELS[0];
     const snippetSource = entry.mode === 'freeform' ? entry.text : (entry.lines || []).find(l => l && l.trim());
     const snippet = snippetSource ? snippetSource.trim() : '(내용 없음)';
+    const isNew = listScope === 'mine' && hasUnseenFeedback(entry);
     const card = el('button', 'entry-card');
     card.innerHTML = `
       ${entry.photo ? `<img class="entry-thumb" src="${entry.photo}" alt="">` : `<div class="entry-thumb">📔</div>`}
@@ -1415,7 +1460,7 @@ function renderList(){
         </div>
         <div class="entry-snippet">${escapeHtml(snippet)}</div>
         ${entry.topic ? `<div class="entry-topic">💡 ${escapeHtml(entry.topic)}</div>` : ''}
-        ${entry.reviewed ? `<span class="reviewed-badge">✅ 선생님 확인</span>` : ''}
+        ${isNew ? `<span class="entry-new-badge">🆕 새 코멘트</span>` : (entry.reviewed ? `<span class="reviewed-badge">✅ 선생님 확인</span>` : '')}
       </div>
     `;
     card.addEventListener('click', () => openDetail(entry.id));
@@ -1808,6 +1853,7 @@ function openDetail(id){
   $('#btn-detail-edit').classList.toggle('hidden', !own);
   $('#btn-detail-delete').classList.toggle('hidden', !own);
   $('#student-feedback-section').classList.toggle('hidden', !own);
+  if (own) markEntrySeen(entry);
   showView('detail');
   loadStudentComments();
   if (own) loadStudentFeedback();
@@ -2554,7 +2600,7 @@ $('#input-photo').addEventListener('change', async e => {
   e.target.value = '';
 });
 
-$('#btn-detail-back').addEventListener('click', () => showView('list'));
+$('#btn-detail-back').addEventListener('click', () => { showView('list'); renderList(); });
 $('#btn-detail-edit').addEventListener('click', () => openEditEntry(editingId));
 $('#btn-detail-delete').addEventListener('click', deleteCurrentEntry);
 $('#btn-detail-print').addEventListener('click', () => window.print());
