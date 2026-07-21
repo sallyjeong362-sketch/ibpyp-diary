@@ -317,7 +317,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .reviewed-toggle { display: flex; align-items: center; gap: 0.55rem; font-size: 13.5px; font-weight: 700; }
 .reviewed-toggle input { width: 18px; height: 18px; }
 .teacher-comment-label { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); display: block; margin: 0.9rem 0 0.5rem; }
-.teacher-comment-box textarea { width: 100%; min-height: 80px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.65rem; font-size: 13.5px; line-height: 1.6; }
+.teacher-comment-box textarea { width: 100%; max-width: 100%; min-height: 80px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.65rem; font-size: 13.5px; line-height: 1.6; resize: vertical; }
 .save-comment-btn { margin-top: 0.7rem; width: 100%; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); padding: 0.65rem; font-size: 13px; font-weight: 700; }
 
 .ai-check-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem 1.1rem; margin-top: 1rem; }
@@ -1024,6 +1024,9 @@ function createFirestoreBackend(db, sdk, getUid){
       try { await updateDoc(doc(db, 'classes', code), { teacherUid: getUid() }); } catch(e) { /* best-effort */ }
       return { ok:true, className: data.name };
     },
+    async claimTeacherUid(code){
+      await updateDoc(doc(db, 'classes', code), { teacherUid: getUid() });
+    },
     async addEntry(code, entry){
       const ref = await addDoc(collection(db, 'classes', code, 'entries'), { ...entry, ownerUid: getUid(), reviewed:false, teacherComment:'', createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
       return ref.id;
@@ -1101,6 +1104,13 @@ function createMockBackend(getIdentity){
       c.teacherUid = getUid();
       save(dbObj);
       return { ok:true, className: c.name };
+    },
+    async claimTeacherUid(code){
+      const dbObj = load();
+      const c = dbObj.classes[code];
+      if (!c) return;
+      c.teacherUid = getUid();
+      save(dbObj);
     },
     async addEntry(code, entry){
       const dbObj = load();
@@ -2174,6 +2184,19 @@ async function refreshDashboard(){
   renderDashboard();
 }
 
+// 같은 학급을 다른 기기·탭에서도 열어본 적이 있으면, 마지막으로 로그인한 쪽으로만
+// 쓰기 권한(teacherUid)이 넘어가 있을 수 있어요. 이 탭에서 쓰기가 막히면 권한을
+// 다시 이 기기로 가져온 뒤 한 번만 재시도해서, 사용자가 못 보고 지나칠 뻔한
+// "저장이 조용히 실패하는" 상황을 줄여줍니다.
+async function teacherWrite(fn){
+  try {
+    await fn();
+  } catch (e) {
+    await backend.claimTeacherUid(teacherClassCode);
+    await fn();
+  }
+}
+
 function openTeacherGarden(){
   $('#teacher-garden-title').textContent = (teacherClassName || '우리 반') + ' 성장 정원';
   renderGardenGrid($('#teacher-garden-grid'), dashboardEntries);
@@ -2762,9 +2785,17 @@ $('#btn-add-teacher-feedback').addEventListener('click', async () => {
   const input = $('#input-teacher-feedback-text');
   const text = input.value.trim();
   if (!text) return;
-  await backend.addFeedback(teacherClassCode, teacherEditingId, { role: 'teacher', authorName: '선생님', text });
-  input.value = '';
-  await loadTeacherFeedback();
+  const btn = $('#btn-add-teacher-feedback');
+  btn.disabled = true;
+  try {
+    await teacherWrite(() => backend.addFeedback(teacherClassCode, teacherEditingId, { role: 'teacher', authorName: '선생님', text }));
+    input.value = '';
+    await loadTeacherFeedback();
+  } catch (e) {
+    showToast('전송에 실패했어요. 새로고침 후 다시 시도해주세요.');
+  } finally {
+    btn.disabled = false;
+  }
 });
 $('#input-teacher-feedback-text').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); $('#btn-add-teacher-feedback').click(); }
@@ -2772,16 +2803,32 @@ $('#input-teacher-feedback-text').addEventListener('keydown', e => {
 $('#btn-save-review').addEventListener('click', async () => {
   const reviewed = $('#input-reviewed').checked;
   const comment = $('#input-teacher-comment').value.trim();
-  await backend.updateEntry(teacherClassCode, teacherEditingId, { reviewed, teacherComment: comment });
-  showToast('저장했어요');
-  await refreshDashboard();
+  const btn = $('#btn-save-review');
+  btn.disabled = true;
+  try {
+    await teacherWrite(() => backend.updateEntry(teacherClassCode, teacherEditingId, { reviewed, teacherComment: comment }));
+    showToast('저장했어요');
+    await refreshDashboard();
+  } catch (e) {
+    showToast('저장에 실패했어요. 새로고침 후 다시 로그인해서 시도해주세요.');
+  } finally {
+    btn.disabled = false;
+  }
 });
 $('#btn-teacher-delete-entry').addEventListener('click', async () => {
   if (!confirm('이 일기를 삭제할까요? 학생 화면에서도 사라져요.')) return;
-  await backend.deleteEntry(teacherClassCode, teacherEditingId);
-  showToast('삭제했어요');
-  await refreshDashboard();
-  showView('teacher-dashboard');
+  const btn = $('#btn-teacher-delete-entry');
+  btn.disabled = true;
+  try {
+    await teacherWrite(() => backend.deleteEntry(teacherClassCode, teacherEditingId));
+    showToast('삭제했어요');
+    await refreshDashboard();
+    showView('teacher-dashboard');
+  } catch (e) {
+    showToast('삭제에 실패했어요. 새로고침 후 다시 로그인해서 시도해주세요.');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 /* ---------------- Init ---------------- */
