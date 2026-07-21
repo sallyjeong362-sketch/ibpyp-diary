@@ -658,6 +658,10 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
     <button class="ghost-btn" id="btn-open-teacher-garden" type="button" style="width:100%;margin-bottom:0.6rem;">🌳 우리 반 성장 정원 보기</button>
     <button class="ghost-btn" id="btn-open-teacher-export" type="button" style="width:100%;margin-bottom:1rem;">🖨️ 기간별 인쇄 · PDF 만들기</button>
 
+    <div id="teacher-feedback-notice" class="feedback-notice hidden">
+      <span id="teacher-feedback-notice-text"></span>
+    </div>
+
     <div class="calendar-box">
       <div class="calendar-header">
         <button type="button" id="btn-cal-prev" aria-label="이전 달">◀</button>
@@ -1065,6 +1069,9 @@ function createFirestoreBackend(db, sdk, getUid){
       arr.sort((a, b) => commentSortKey(a) - commentSortKey(b));
       return arr;
     },
+    async touchStudentFeedback(code, entryId){
+      await updateDoc(doc(db, 'classes', code, 'entries', entryId), { lastStudentFeedbackAt: serverTimestamp() });
+    },
   };
 }
 
@@ -1171,6 +1178,13 @@ function createMockBackend(getIdentity){
       const arr = Object.values(c.entries[entryId].feedback);
       arr.sort((a, b) => commentSortKey(a) - commentSortKey(b));
       return arr;
+    },
+    async touchStudentFeedback(code, entryId){
+      const dbObj = load();
+      const c = dbObj.classes[code];
+      if (!c || !c.entries[entryId]) return;
+      c.entries[entryId].lastStudentFeedbackAt = new Date().toISOString();
+      save(dbObj);
     },
   };
 }
@@ -1284,6 +1298,26 @@ function hasUnseenFeedback(entry){
   if (!entry || (!entry.reviewed && !entry.teacherComment)) return false;
   const map = getSeenFeedbackMap();
   return map[seenFeedbackKey(entry.id)] !== timestampKey(entry.updatedAt);
+}
+
+// 학생이 선생님과의 대화창에 답장을 남기면 선생님 대시보드에도 알림이 뜨도록,
+// entry.lastStudentFeedbackAt(학생 쪽에서만 갱신)을 기준으로 별도 추적합니다.
+const TEACHER_SEEN_FEEDBACK_KEY = 'ibpyp_diary_teacher_seen_feedback_v1';
+function getTeacherSeenFeedbackMap(){
+  try { return JSON.parse(localStorage.getItem(TEACHER_SEEN_FEEDBACK_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function teacherSeenFeedbackKey(entryId){ return teacherClassCode + ':' + entryId; }
+function markEntrySeenByTeacher(entry){
+  if (!entry) return;
+  const map = getTeacherSeenFeedbackMap();
+  map[teacherSeenFeedbackKey(entry.id)] = timestampKey(entry.lastStudentFeedbackAt);
+  localStorage.setItem(TEACHER_SEEN_FEEDBACK_KEY, JSON.stringify(map));
+}
+function hasUnseenStudentFeedback(entry){
+  if (!entry || !entry.lastStudentFeedbackAt) return false;
+  const map = getTeacherSeenFeedbackMap();
+  return map[teacherSeenFeedbackKey(entry.id)] !== timestampKey(entry.lastStudentFeedbackAt);
 }
 
 async function sha256Hex(str){
@@ -2291,6 +2325,15 @@ function renderDashboard(){
   rosterBox.innerHTML = '';
   listBox.innerHTML = '';
 
+  const teacherNotice = $('#teacher-feedback-notice');
+  const unseenReplyCount = dashboardEntries.filter(hasUnseenStudentFeedback).length;
+  if (unseenReplyCount > 0) {
+    teacherNotice.classList.remove('hidden');
+    $('#teacher-feedback-notice-text').textContent = `📣 학생이 ${unseenReplyCount}개의 일기에 답장을 남겼어요! 확인해보세요.`;
+  } else {
+    teacherNotice.classList.add('hidden');
+  }
+
   if (dashboardEntries.length === 0) {
     emptyBox.classList.remove('hidden');
     $('#dashboard-empty-title').textContent = '아직 제출된 일기가 없어요';
@@ -2335,6 +2378,7 @@ function renderDashboard(){
     const lv = LEVEL_MAP[entry.level] || LEVELS[0];
     const snippetSource = entry.mode === 'freeform' ? entry.text : (entry.lines || []).find(l => l && l.trim());
     const snippet = snippetSource ? snippetSource.trim() : '(내용 없음)';
+    const hasNewReply = hasUnseenStudentFeedback(entry);
     const card = el('button', 'entry-card');
     card.innerHTML = `
       ${entry.photo ? `<img class="entry-thumb" src="${entry.photo}" alt="">` : `<div class="entry-thumb">📔</div>`}
@@ -2345,7 +2389,7 @@ function renderDashboard(){
           <span>🧑‍🎓 ${escapeHtml(entry.studentName || '')}</span>
         </div>
         <div class="entry-snippet">${escapeHtml(snippet)}</div>
-        <span class="${entry.reviewed ? 'reviewed-badge' : 'unreviewed-badge'}">${entry.reviewed ? '✅ 확인함' : '⏳ 미확인'}</span>
+        ${hasNewReply ? `<span class="entry-new-badge">🆕 학생 답장</span>` : `<span class="${entry.reviewed ? 'reviewed-badge' : 'unreviewed-badge'}">${entry.reviewed ? '✅ 확인함' : '⏳ 미확인'}</span>`}
       </div>
     `;
     card.addEventListener('click', () => openTeacherDetail(entry.id));
@@ -2377,6 +2421,7 @@ function openTeacherDetail(id){
   $('#ai-check-results').classList.add('hidden');
   $('#ai-check-results').innerHTML = '';
   $('#ai-engine-label').textContent = aiEndpointConfigured() ? '🤖 Claude AI로 첨삭해요' : '📝 무료 문법검사기(LanguageTool)로 첨삭해요';
+  markEntrySeenByTeacher(entry);
   showView('teacher-detail');
   loadTeacherComments();
   loadTeacherFeedback();
@@ -2655,6 +2700,7 @@ $('#btn-add-student-feedback').addEventListener('click', async () => {
   const text = input.value.trim();
   if (!text) return;
   await backend.addFeedback(currentClassCode, editingId, { role: 'student', authorName: currentStudentName, text });
+  await backend.touchStudentFeedback(currentClassCode, editingId);
   input.value = '';
   await loadStudentFeedback();
 });
