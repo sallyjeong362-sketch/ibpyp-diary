@@ -237,6 +237,12 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .topic-hint { display: flex; align-items: flex-start; gap: 8px; background: var(--accent-tint); color: var(--accent-strong); border-radius: var(--radius-md); padding: 0.65rem 0.8rem; font-size: 12.5px; line-height: 1.5; }
 .topic-hint button { flex: none; background: transparent; border: none; color: var(--accent-strong); font-size: 15px; opacity: .7; }
 
+.correction-recap-box { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: var(--radius-md); padding: 0.8rem 0.9rem; margin-top: 0.7rem; }
+.correction-recap-label { font-size: 12px; font-weight: 700; color: var(--warn-ink); margin-bottom: 0.4rem; }
+.correction-recap-text { font-size: 13px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; background: var(--surface); border-radius: var(--radius-sm); padding: 0.6rem 0.7rem; margin-bottom: 0.6rem; }
+.correction-recap-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+.correction-recap-actions button { font-size: 12.5px; padding: 0.45rem 0.8rem; }
+
 .diary-lines { display: flex; flex-direction: column; gap: 0.6rem; }
 .diary-line { display: flex; gap: 0.5rem; align-items: flex-start; }
 .diary-line-num {
@@ -592,6 +598,15 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
     <div id="topic-hint-box" class="topic-hint hidden" style="margin-top:0.7rem;">
       <span id="topic-hint-text" style="flex:1;"></span>
       <button id="btn-clear-topic">✕</button>
+    </div>
+
+    <div id="correction-recap-box" class="correction-recap-box hidden">
+      <div class="correction-recap-label">🔁 지난 일기에 선생님이 남긴 코멘트예요. 고친 문장을 다시 써보면서 연습해볼까요?</div>
+      <div class="correction-recap-text" id="correction-recap-text"></div>
+      <div class="correction-recap-actions">
+        <button type="button" class="ghost-btn" id="btn-correction-recap-dismiss">나중에</button>
+        <button type="button" class="tool-btn" id="btn-correction-recap-apply">✍️ 오늘 일기에 추가하기</button>
+      </div>
     </div>
 
     <div class="section-label">📝 나의 이야기</div>
@@ -1261,6 +1276,7 @@ let draft = null;
 let editingId = null;
 let lastFocusedInput = null;
 let currentTopicPreview = null;
+let correctionRecapEntry = null; // 오늘 새 일기를 쓸 때 다시 보여줄, 지난 일기의 선생님 코멘트 (있으면)
 
 function loadSession(){
   try { return JSON.parse(localStorage.getItem(SESSION_KEY)); }
@@ -1328,6 +1344,31 @@ function hasUnseenStudentFeedback(entry){
   if (!entry || !entry.lastStudentFeedbackAt) return false;
   const map = getTeacherSeenFeedbackMap();
   return map[teacherSeenFeedbackKey(entry.id)] !== timestampKey(entry.lastStudentFeedbackAt);
+}
+
+// 새 일기를 쓸 때, 아직 다음 일기에 반영하지 않은 지난 선생님 코멘트가 있으면
+// 다시 써볼 수 있게 추천해줍니다. 한 번 "추가하기"를 누르면 그 코멘트는 다시
+// 추천하지 않도록 기록해둡니다.
+const APPLIED_CORRECTION_KEY = 'ibpyp_diary_applied_correction_v1';
+function getAppliedCorrectionMap(){
+  try { return JSON.parse(localStorage.getItem(APPLIED_CORRECTION_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function appliedCorrectionKey(entryId){ return currentClassCode + ':' + currentStudentName + ':' + entryId; }
+function markCorrectionApplied(entry){
+  const map = getAppliedCorrectionMap();
+  map[appliedCorrectionKey(entry.id)] = timestampKey(entry.updatedAt);
+  localStorage.setItem(APPLIED_CORRECTION_KEY, JSON.stringify(map));
+}
+function isCorrectionApplied(entry){
+  const map = getAppliedCorrectionMap();
+  return map[appliedCorrectionKey(entry.id)] === timestampKey(entry.updatedAt);
+}
+function findLatestCommentToRecap(mine){
+  const withComment = mine.filter(e => e.teacherComment && e.teacherComment.trim() && !isCorrectionApplied(e));
+  if (withComment.length === 0) return null;
+  withComment.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  return withComment[0];
 }
 
 async function sha256Hex(str){
@@ -1616,6 +1657,7 @@ async function openNewEntry(){
     draft = JSON.parse(JSON.stringify(todayEntry));
     if (!draft.lines || draft.lines.length === 0) draft.lines = ['', '', ''];
     editingId = todayEntry.id;
+    correctionRecapEntry = null;
     $('#editor-title').textContent = '오늘의 일기 수정하기';
     showView('editor');
     renderEditor();
@@ -1623,6 +1665,7 @@ async function openNewEntry(){
   }
   draft = blankDraft();
   editingId = null;
+  correctionRecapEntry = findLatestCommentToRecap(mine);
   $('#editor-title').textContent = '오늘의 일기';
   showView('editor');
   renderEditor();
@@ -1641,6 +1684,7 @@ function openEditEntry(id){
   draft = JSON.parse(JSON.stringify(entry));
   if (!draft.lines || draft.lines.length === 0) draft.lines = ['', '', ''];
   editingId = id;
+  correctionRecapEntry = null;
   $('#editor-title').textContent = '일기 수정하기';
   showView('editor');
   renderEditor();
@@ -1714,6 +1758,13 @@ function renderEditor(){
     $('#topic-hint-text').textContent = '오늘의 주제: ' + draft.topic;
   } else {
     $('#topic-hint-box').classList.add('hidden');
+  }
+
+  if (correctionRecapEntry) {
+    $('#correction-recap-box').classList.remove('hidden');
+    $('#correction-recap-text').textContent = correctionRecapEntry.teacherComment;
+  } else {
+    $('#correction-recap-box').classList.add('hidden');
   }
 
   renderWritingArea();
@@ -2738,6 +2789,30 @@ $('#btn-toggle-freeform').addEventListener('click', toggleFreeform);
 $('#btn-open-topic').addEventListener('click', openTopicModal);
 $('#btn-open-template').addEventListener('click', openTemplateModal);
 $('#btn-clear-topic').addEventListener('click', () => { draft.topic = ''; renderEditor(); });
+$('#btn-correction-recap-dismiss').addEventListener('click', () => { correctionRecapEntry = null; renderEditor(); });
+$('#btn-correction-recap-apply').addEventListener('click', () => {
+  if (!correctionRecapEntry) return;
+  const text = (correctionRecapEntry.teacherComment || '').trim();
+  if (!text) return;
+  const lv = currentLevel();
+  if (draft.mode === 'freeform') {
+    draft.text = draft.text.trim() ? (draft.text.trim() + '\n\n' + text) : text;
+  } else {
+    const emptyIdx = draft.lines.findIndex(l => !l || !l.trim());
+    if (emptyIdx !== -1) {
+      draft.lines[emptyIdx] = text;
+    } else if (lv.allowExpand && (!lv.maxLines || draft.lines.length < lv.maxLines)) {
+      draft.lines.push(text);
+    } else {
+      showToast('빈 줄이 없어요. 한 줄을 비우고 다시 시도해주세요.');
+      return;
+    }
+  }
+  markCorrectionApplied(correctionRecapEntry);
+  correctionRecapEntry = null;
+  renderEditor();
+  showToast('오늘 일기에 추가했어요 ✍️');
+});
 
 $('#input-date').addEventListener('change', () => { draft.date = $('#input-date').value; });
 $('#diary-textarea').addEventListener('input', e => { draft.text = e.target.value; });
