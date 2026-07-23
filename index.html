@@ -237,11 +237,15 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .topic-hint { display: flex; align-items: flex-start; gap: 8px; background: var(--accent-tint); color: var(--accent-strong); border-radius: var(--radius-md); padding: 0.65rem 0.8rem; font-size: 12.5px; line-height: 1.5; }
 .topic-hint button { flex: none; background: transparent; border: none; color: var(--accent-strong); font-size: 15px; opacity: .7; }
 
-.correction-recap-box { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: var(--radius-md); padding: 0.8rem 0.9rem; margin-top: 0.7rem; }
-.correction-recap-label { font-size: 12px; font-weight: 700; color: var(--warn-ink); margin-bottom: 0.4rem; }
-.correction-recap-text { font-size: 13px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; background: var(--surface); border-radius: var(--radius-sm); padding: 0.6rem 0.7rem; margin-bottom: 0.6rem; }
-.correction-recap-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
-.correction-recap-actions button { font-size: 12.5px; padding: 0.45rem 0.8rem; }
+.correction-recap-box { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: var(--radius-md); padding: 0.9rem; margin-bottom: 1.1rem; }
+.correction-recap-label { font-size: 12.5px; font-weight: 700; color: var(--warn-ink); margin-bottom: 0.5rem; line-height: 1.5; }
+.correction-recap-text { font-size: 13px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; background: var(--surface); border-radius: var(--radius-sm); padding: 0.6rem 0.7rem; margin-bottom: 0.7rem; }
+.correction-recap-lines { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.4rem; }
+.correction-recap-line { width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.6rem 0.7rem; font-size: 13.5px; color: var(--ink); }
+.correction-recap-line:focus { outline: none; border-color: var(--accent); }
+.correction-recap-line::placeholder { color: var(--ink-faint); }
+.correction-recap-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.6rem; }
+.correction-recap-actions button { font-size: 12.5px; padding: 0.55rem 1rem; }
 
 .diary-lines { display: flex; flex-direction: column; gap: 0.6rem; }
 .diary-line { display: flex; gap: 0.5rem; align-items: flex-start; }
@@ -571,58 +575,65 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 
     <h2 id="editor-title" style="font-size:18px;margin-bottom:0.2rem;">오늘의 일기</h2>
 
-    <div class="section-label">📚 나의 단계</div>
-    <div class="level-chips" id="level-chips"></div>
-    <div class="level-desc" id="level-desc-text"></div>
-
-    <div class="section-label">🗓️ 날짜 · 오늘의 기분</div>
-    <div class="field-row">
-      <input type="date" id="input-date" class="date-input">
-    </div>
-    <div class="mood-row" id="mood-row" style="margin-top:0.5rem;"></div>
-
-    <div class="section-label">📷 오늘의 한 장</div>
-    <div class="photo-box" id="photo-box">
-      <div class="hint" id="photo-hint"><span class="emoji">🖼️</span>사진을 눌러 오늘을 기록해보세요<br>(선택 사항)</div>
-      <img id="photo-preview" class="hidden" alt="오늘의 사진">
-      <button class="photo-remove-btn hidden" id="btn-remove-photo">✕</button>
-    </div>
-    <input type="file" id="input-photo" accept="image/*" class="hidden">
-
-    <div class="section-label">✍️ 글쓰기 도우미</div>
-    <div class="tool-btn-row">
-      <button class="tool-btn" id="btn-open-topic" type="button">💡 오늘 쓸 주제가 없어요</button>
-      <button class="tool-btn" id="btn-open-template" type="button">🧩 영어 표현 템플릿</button>
-    </div>
-
-    <div id="topic-hint-box" class="topic-hint hidden" style="margin-top:0.7rem;">
-      <span id="topic-hint-text" style="flex:1;"></span>
-      <button id="btn-clear-topic">✕</button>
-    </div>
-
     <div id="correction-recap-box" class="correction-recap-box hidden">
-      <div class="correction-recap-label">🔁 지난 일기에 선생님이 남긴 코멘트예요. 고친 문장을 다시 써보면서 연습해볼까요?</div>
+      <div class="correction-recap-label">🔁 지난 일기에 선생님이 남긴 코멘트예요. 아래 3줄에 고친 문장을 그대로 따라 써야 오늘 일기를 쓸 수 있어요.</div>
       <div class="correction-recap-text" id="correction-recap-text"></div>
+      <div class="correction-recap-lines">
+        <input type="text" class="correction-recap-line" id="correction-recap-line-0" placeholder="1번 문장을 그대로 따라 써보세요" maxlength="200">
+        <input type="text" class="correction-recap-line" id="correction-recap-line-1" placeholder="2번 문장을 그대로 따라 써보세요" maxlength="200">
+        <input type="text" class="correction-recap-line" id="correction-recap-line-2" placeholder="3번 문장을 그대로 따라 써보세요" maxlength="200">
+      </div>
+      <div class="validation-msg" id="correction-recap-validation"></div>
       <div class="correction-recap-actions">
-        <button type="button" class="ghost-btn" id="btn-correction-recap-dismiss">나중에</button>
-        <button type="button" class="tool-btn" id="btn-correction-recap-apply">✍️ 오늘 일기에 추가하기</button>
+        <button type="button" class="save-btn" id="btn-correction-recap-submit">제출하고 오늘 일기 쓰기</button>
       </div>
     </div>
 
-    <div class="section-label">📝 나의 이야기</div>
-    <div id="diary-lines" class="diary-lines"></div>
-    <textarea id="diary-textarea" class="diary-textarea hidden" placeholder="Today, ... / 오늘 있었던 일과 그때 느낀 점, 배운 점을 자유롭게 적어보세요."></textarea>
+    <div id="editor-fields">
+      <div class="section-label">📚 나의 단계</div>
+      <div class="level-chips" id="level-chips"></div>
+      <div class="level-desc" id="level-desc-text"></div>
 
-    <div class="line-tools-row" id="line-tools-row">
-      <button class="ghost-btn" id="btn-add-line" type="button">＋ 줄 추가하기</button>
-      <button class="ghost-btn" id="btn-toggle-freeform" type="button">📄 긴 글로 쓰기</button>
-    </div>
+      <div class="section-label">🗓️ 날짜 · 오늘의 기분</div>
+      <div class="field-row">
+        <input type="date" id="input-date" class="date-input">
+      </div>
+      <div class="mood-row" id="mood-row" style="margin-top:0.5rem;"></div>
 
-    <div class="validation-msg" id="validation-msg"></div>
+      <div class="section-label">📷 오늘의 한 장</div>
+      <div class="photo-box" id="photo-box">
+        <div class="hint" id="photo-hint"><span class="emoji">🖼️</span>사진을 눌러 오늘을 기록해보세요<br>(선택 사항)</div>
+        <img id="photo-preview" class="hidden" alt="오늘의 사진">
+        <button class="photo-remove-btn hidden" id="btn-remove-photo">✕</button>
+      </div>
+      <input type="file" id="input-photo" accept="image/*" class="hidden">
 
-    <div class="editor-actions">
-      <button class="cancel-btn" id="btn-editor-cancel">취소</button>
-      <button class="save-btn" id="btn-save-entry">저장하기</button>
+      <div class="section-label">✍️ 글쓰기 도우미</div>
+      <div class="tool-btn-row">
+        <button class="tool-btn" id="btn-open-topic" type="button">💡 오늘 쓸 주제가 없어요</button>
+        <button class="tool-btn" id="btn-open-template" type="button">🧩 영어 표현 템플릿</button>
+      </div>
+
+      <div id="topic-hint-box" class="topic-hint hidden" style="margin-top:0.7rem;">
+        <span id="topic-hint-text" style="flex:1;"></span>
+        <button id="btn-clear-topic">✕</button>
+      </div>
+
+      <div class="section-label">📝 나의 이야기</div>
+      <div id="diary-lines" class="diary-lines"></div>
+      <textarea id="diary-textarea" class="diary-textarea hidden" placeholder="Today, ... / 오늘 있었던 일과 그때 느낀 점, 배운 점을 자유롭게 적어보세요."></textarea>
+
+      <div class="line-tools-row" id="line-tools-row">
+        <button class="ghost-btn" id="btn-add-line" type="button">＋ 줄 추가하기</button>
+        <button class="ghost-btn" id="btn-toggle-freeform" type="button">📄 긴 글로 쓰기</button>
+      </div>
+
+      <div class="validation-msg" id="validation-msg"></div>
+
+      <div class="editor-actions">
+        <button class="cancel-btn" id="btn-editor-cancel">취소</button>
+        <button class="save-btn" id="btn-save-entry">저장하기</button>
+      </div>
     </div>
   </div>
 
@@ -1277,6 +1288,7 @@ let editingId = null;
 let lastFocusedInput = null;
 let currentTopicPreview = null;
 let correctionRecapEntry = null; // 오늘 새 일기를 쓸 때 다시 보여줄, 지난 일기의 선생님 코멘트 (있으면)
+let correctionRecapDone = true; // 지난 코멘트를 3줄 따라 써서 통과했는지 (통과 전에는 일기 작성 칸을 숨김)
 
 function loadSession(){
   try { return JSON.parse(localStorage.getItem(SESSION_KEY)); }
@@ -1658,6 +1670,7 @@ async function openNewEntry(){
     if (!draft.lines || draft.lines.length === 0) draft.lines = ['', '', ''];
     editingId = todayEntry.id;
     correctionRecapEntry = null;
+    correctionRecapDone = true;
     $('#editor-title').textContent = '오늘의 일기 수정하기';
     showView('editor');
     renderEditor();
@@ -1666,6 +1679,7 @@ async function openNewEntry(){
   draft = blankDraft();
   editingId = null;
   correctionRecapEntry = findLatestCommentToRecap(mine);
+  correctionRecapDone = !correctionRecapEntry;
   $('#editor-title').textContent = '오늘의 일기';
   showView('editor');
   renderEditor();
@@ -1685,6 +1699,7 @@ function openEditEntry(id){
   if (!draft.lines || draft.lines.length === 0) draft.lines = ['', '', ''];
   editingId = id;
   correctionRecapEntry = null;
+  correctionRecapDone = true;
   $('#editor-title').textContent = '일기 수정하기';
   showView('editor');
   renderEditor();
@@ -1760,11 +1775,11 @@ function renderEditor(){
     $('#topic-hint-box').classList.add('hidden');
   }
 
-  if (correctionRecapEntry) {
-    $('#correction-recap-box').classList.remove('hidden');
+  const gateActive = !!correctionRecapEntry && !correctionRecapDone;
+  $('#correction-recap-box').classList.toggle('hidden', !gateActive);
+  $('#editor-fields').classList.toggle('hidden', gateActive);
+  if (gateActive) {
     $('#correction-recap-text').textContent = correctionRecapEntry.teacherComment;
-  } else {
-    $('#correction-recap-box').classList.add('hidden');
   }
 
   renderWritingArea();
@@ -2789,29 +2804,20 @@ $('#btn-toggle-freeform').addEventListener('click', toggleFreeform);
 $('#btn-open-topic').addEventListener('click', openTopicModal);
 $('#btn-open-template').addEventListener('click', openTemplateModal);
 $('#btn-clear-topic').addEventListener('click', () => { draft.topic = ''; renderEditor(); });
-$('#btn-correction-recap-dismiss').addEventListener('click', () => { correctionRecapEntry = null; renderEditor(); });
-$('#btn-correction-recap-apply').addEventListener('click', () => {
+$('#btn-correction-recap-submit').addEventListener('click', () => {
   if (!correctionRecapEntry) return;
-  const text = (correctionRecapEntry.teacherComment || '').trim();
-  if (!text) return;
-  const lv = currentLevel();
-  if (draft.mode === 'freeform') {
-    draft.text = draft.text.trim() ? (draft.text.trim() + '\n\n' + text) : text;
-  } else {
-    const emptyIdx = draft.lines.findIndex(l => !l || !l.trim());
-    if (emptyIdx !== -1) {
-      draft.lines[emptyIdx] = text;
-    } else if (lv.allowExpand && (!lv.maxLines || draft.lines.length < lv.maxLines)) {
-      draft.lines.push(text);
-    } else {
-      showToast('빈 줄이 없어요. 한 줄을 비우고 다시 시도해주세요.');
-      return;
-    }
+  const inputs = ['#correction-recap-line-0', '#correction-recap-line-1', '#correction-recap-line-2'].map(sel => $(sel));
+  const values = inputs.map(i => i.value.trim());
+  if (values.some(v => !v)) {
+    $('#correction-recap-validation').textContent = '3문장을 모두 따라 써야 오늘 일기를 쓸 수 있어요.';
+    return;
   }
+  $('#correction-recap-validation').textContent = '';
   markCorrectionApplied(correctionRecapEntry);
-  correctionRecapEntry = null;
+  correctionRecapDone = true;
+  inputs.forEach(i => { i.value = ''; });
   renderEditor();
-  showToast('오늘 일기에 추가했어요 ✍️');
+  showToast('연습을 마쳤어요! 오늘 일기를 써볼까요? ✍️');
 });
 
 $('#input-date').addEventListener('change', () => { draft.date = $('#input-date').value; });
