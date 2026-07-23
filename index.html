@@ -1101,6 +1101,9 @@ function createFirestoreBackend(db, sdk, getUid){
     async touchStudentFeedback(code, entryId){
       await updateDoc(doc(db, 'classes', code, 'entries', entryId), { lastStudentFeedbackAt: serverTimestamp() });
     },
+    async touchStudentEdit(code, entryId){
+      await updateDoc(doc(db, 'classes', code, 'entries', entryId), { lastStudentEditAt: serverTimestamp() });
+    },
   };
 }
 
@@ -1220,6 +1223,13 @@ function createMockBackend(getIdentity){
       const c = dbObj.classes[code];
       if (!c || !c.entries[entryId]) return;
       c.entries[entryId].lastStudentFeedbackAt = new Date().toISOString();
+      save(dbObj);
+    },
+    async touchStudentEdit(code, entryId){
+      const dbObj = load();
+      const c = dbObj.classes[code];
+      if (!c || !c.entries[entryId]) return;
+      c.entries[entryId].lastStudentEditAt = new Date().toISOString();
       save(dbObj);
     },
   };
@@ -1356,6 +1366,27 @@ function hasUnseenStudentFeedback(entry){
   if (!entry || !entry.lastStudentFeedbackAt) return false;
   const map = getTeacherSeenFeedbackMap();
   return map[teacherSeenFeedbackKey(entry.id)] !== timestampKey(entry.lastStudentFeedbackAt);
+}
+
+// 이미 확인(reviewed)한 일기를 학생이 고쳐서 다시 제출하면 선생님 대시보드에도
+// 알림이 뜨도록, entry.lastStudentEditAt(학생이 기존 일기를 수정 저장할 때만 갱신)을
+// 기준으로 별도 추적합니다.
+const TEACHER_SEEN_EDIT_KEY = 'ibpyp_diary_teacher_seen_edit_v1';
+function getTeacherSeenEditMap(){
+  try { return JSON.parse(localStorage.getItem(TEACHER_SEEN_EDIT_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function teacherSeenEditKey(entryId){ return teacherClassCode + ':' + entryId; }
+function markEntryEditSeenByTeacher(entry){
+  if (!entry) return;
+  const map = getTeacherSeenEditMap();
+  map[teacherSeenEditKey(entry.id)] = timestampKey(entry.lastStudentEditAt);
+  localStorage.setItem(TEACHER_SEEN_EDIT_KEY, JSON.stringify(map));
+}
+function hasUnseenStudentEdit(entry){
+  if (!entry || !entry.lastStudentEditAt) return false;
+  const map = getTeacherSeenEditMap();
+  return map[teacherSeenEditKey(entry.id)] !== timestampKey(entry.lastStudentEditAt);
 }
 
 // 새 일기를 쓸 때, 아직 다음 일기에 반영하지 않은 지난 선생님 코멘트가 있으면
@@ -1924,6 +1955,9 @@ async function saveEntry(){
   try {
     if (editingId) {
       await backend.updateEntry(currentClassCode, editingId, payload);
+      // 선생님이 이미 확인한 일기를 학생이 고쳐서 다시 냈으면, 선생님 대시보드에
+      // 다시 확인해보라는 알림이 뜨도록 표시해둡니다.
+      if (draft.reviewed) await backend.touchStudentEdit(currentClassCode, editingId);
     } else {
       await backend.addEntry(currentClassCode, payload);
     }
@@ -2412,9 +2446,13 @@ function renderDashboard(){
 
   const teacherNotice = $('#teacher-feedback-notice');
   const unseenReplyCount = dashboardEntries.filter(hasUnseenStudentFeedback).length;
-  if (unseenReplyCount > 0) {
+  const unseenEditCount = dashboardEntries.filter(hasUnseenStudentEdit).length;
+  const noticeLines = [];
+  if (unseenReplyCount > 0) noticeLines.push(`📣 학생이 ${unseenReplyCount}개의 일기에 답장을 남겼어요!`);
+  if (unseenEditCount > 0) noticeLines.push(`✏️ 학생이 ${unseenEditCount}개의 일기를 고쳐서 다시 제출했어요!`);
+  if (noticeLines.length > 0) {
     teacherNotice.classList.remove('hidden');
-    $('#teacher-feedback-notice-text').textContent = `📣 학생이 ${unseenReplyCount}개의 일기에 답장을 남겼어요! 확인해보세요.`;
+    $('#teacher-feedback-notice-text').textContent = noticeLines.join(' ') + ' 확인해보세요.';
   } else {
     teacherNotice.classList.add('hidden');
   }
@@ -2464,6 +2502,11 @@ function renderDashboard(){
     const snippetSource = entry.mode === 'freeform' ? entry.text : (entry.lines || []).find(l => l && l.trim());
     const snippet = snippetSource ? snippetSource.trim() : '(내용 없음)';
     const hasNewReply = hasUnseenStudentFeedback(entry);
+    const hasNewEdit = hasUnseenStudentEdit(entry);
+    const badges = [];
+    if (hasNewEdit) badges.push(`<span class="entry-new-badge">🆕 수정 제출</span>`);
+    if (hasNewReply) badges.push(`<span class="entry-new-badge">🆕 학생 답장</span>`);
+    if (badges.length === 0) badges.push(`<span class="${entry.reviewed ? 'reviewed-badge' : 'unreviewed-badge'}">${entry.reviewed ? '✅ 확인함' : '⏳ 미확인'}</span>`);
     const card = el('button', 'entry-card');
     card.innerHTML = `
       ${entry.photo ? `<img class="entry-thumb" src="${entry.photo}" alt="">` : `<div class="entry-thumb">📔</div>`}
@@ -2474,7 +2517,7 @@ function renderDashboard(){
           <span>🧑‍🎓 ${escapeHtml(entry.studentName || '')}</span>
         </div>
         <div class="entry-snippet">${escapeHtml(snippet)}</div>
-        ${hasNewReply ? `<span class="entry-new-badge">🆕 학생 답장</span>` : `<span class="${entry.reviewed ? 'reviewed-badge' : 'unreviewed-badge'}">${entry.reviewed ? '✅ 확인함' : '⏳ 미확인'}</span>`}
+        ${badges.join('')}
       </div>
     `;
     card.addEventListener('click', () => openTeacherDetail(entry.id));
@@ -2507,6 +2550,7 @@ function openTeacherDetail(id){
   $('#ai-check-results').innerHTML = '';
   $('#ai-engine-label').textContent = aiEndpointConfigured() ? '🤖 Claude AI로 첨삭해요' : '📝 무료 문법검사기(LanguageTool)로 첨삭해요';
   markEntrySeenByTeacher(entry);
+  markEntryEditSeenByTeacher(entry);
   showView('teacher-detail');
   loadTeacherComments();
   loadTeacherFeedback();
