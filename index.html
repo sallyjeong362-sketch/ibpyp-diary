@@ -1663,24 +1663,20 @@ function blankDraft(){
 
 async function openNewEntry(){
   const mine = await backend.listEntries(currentClassCode, { studentName: currentStudentName });
+  correctionRecapEntry = findLatestCommentToRecap(mine);
+  correctionRecapDone = !correctionRecapEntry;
   const todayEntry = mine.find(e => e.date === todayStr());
   if (todayEntry) {
-    showToast('오늘 일기는 이미 썼어요. 오늘 쓴 일기를 불러왔어요 ✍️');
+    if (correctionRecapDone) showToast('오늘 일기는 이미 썼어요. 오늘 쓴 일기를 불러왔어요 ✍️');
     draft = JSON.parse(JSON.stringify(todayEntry));
     if (!draft.lines || draft.lines.length === 0) draft.lines = ['', '', ''];
     editingId = todayEntry.id;
-    correctionRecapEntry = null;
-    correctionRecapDone = true;
     $('#editor-title').textContent = '오늘의 일기 수정하기';
-    showView('editor');
-    renderEditor();
-    return;
+  } else {
+    draft = blankDraft();
+    editingId = null;
+    $('#editor-title').textContent = '오늘의 일기';
   }
-  draft = blankDraft();
-  editingId = null;
-  correctionRecapEntry = findLatestCommentToRecap(mine);
-  correctionRecapDone = !correctionRecapEntry;
-  $('#editor-title').textContent = '오늘의 일기';
   showView('editor');
   renderEditor();
 }
