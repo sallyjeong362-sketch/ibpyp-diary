@@ -162,6 +162,11 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 .roster-chip.active { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-strong); }
 .roster-chip .count { opacity: 0.6; font-weight: 500; margin-left: 3px; }
 
+.sort-toggle-chip { display: inline-block; background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px; padding: 0.5rem 0.9rem; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin-bottom: 1rem; }
+.sort-toggle-chip.active { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-strong); }
+.entry-group-label { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); margin: 1rem 0 0.5rem; }
+.entry-group-label:first-child { margin-top: 0; }
+
 .calendar-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem 1rem 1.1rem; margin-bottom: 1rem; }
 .calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
 .calendar-header button { background: var(--surface-2); border: none; border-radius: 999px; width: 30px; height: 30px; font-size: 13px; color: var(--ink-soft); }
@@ -706,6 +711,7 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
     </div>
 
     <div class="roster-row" id="roster-row"></div>
+    <button type="button" class="sort-toggle-chip" id="btn-toggle-group-unreviewed">⏳ 미확인 먼저 모아보기</button>
     <div id="dashboard-empty" class="empty-state hidden">
       <div class="emoji">📭</div>
       <h3 id="dashboard-empty-title">아직 제출된 일기가 없어요</h3>
@@ -1288,6 +1294,7 @@ let teacherClassName = '';
 let dashboardEntries = [];
 let dashboardFilterStudent = null;
 let dashboardFilterDate = null;
+let dashboardGroupUnreviewed = false;
 let dashboardCalendarYear = new Date().getFullYear();
 let dashboardCalendarMonth = new Date().getMonth();
 let teacherEditingId = null;
@@ -2266,6 +2273,7 @@ async function enterTeacherDashboard(code, className){
   teacherClassName = className || '';
   dashboardFilterStudent = null;
   dashboardFilterDate = null;
+  dashboardGroupUnreviewed = false;
   showView('loading');
   await refreshDashboard();
   initDashboardCalendar();
@@ -2489,6 +2497,8 @@ function renderDashboard(){
 
   const filtered = dashboardFilterStudent ? dateScoped.filter(e => e.studentName === dashboardFilterStudent) : dateScoped;
 
+  $('#btn-toggle-group-unreviewed').classList.toggle('active', dashboardGroupUnreviewed);
+
   if (filtered.length === 0) {
     emptyBox.classList.remove('hidden');
     $('#dashboard-empty-title').textContent = '이 조건에 맞는 일기가 없어요';
@@ -2497,32 +2507,43 @@ function renderDashboard(){
   }
   emptyBox.classList.add('hidden');
 
-  filtered.forEach(entry => {
-    const lv = LEVEL_MAP[entry.level] || LEVELS[0];
-    const snippetSource = entry.mode === 'freeform' ? entry.text : (entry.lines || []).find(l => l && l.trim());
-    const snippet = snippetSource ? snippetSource.trim() : '(내용 없음)';
-    const hasNewReply = hasUnseenStudentFeedback(entry);
-    const hasNewEdit = hasUnseenStudentEdit(entry);
-    const badges = [];
-    if (hasNewEdit) badges.push(`<span class="entry-new-badge">🆕 수정 제출</span>`);
-    if (hasNewReply) badges.push(`<span class="entry-new-badge">🆕 학생 답장</span>`);
-    if (badges.length === 0) badges.push(`<span class="${entry.reviewed ? 'reviewed-badge' : 'unreviewed-badge'}">${entry.reviewed ? '✅ 확인함' : '⏳ 미확인'}</span>`);
-    const card = el('button', 'entry-card');
-    card.innerHTML = `
-      ${entry.photo ? `<img class="entry-thumb" src="${entry.photo}" alt="">` : `<div class="entry-thumb">📔</div>`}
-      <div class="entry-body">
-        <div class="entry-meta">
-          <span class="badge">${lv.emoji} ${escapeHtml(lv.label)}</span>
-          <span>${escapeHtml(formatDate(entry.date))}</span>
-          <span>🧑‍🎓 ${escapeHtml(entry.studentName || '')}</span>
-        </div>
-        <div class="entry-snippet">${escapeHtml(snippet)}</div>
-        ${badges.join('')}
+  if (dashboardGroupUnreviewed) {
+    const unreviewed = filtered.filter(e => !e.reviewed);
+    const reviewed = filtered.filter(e => e.reviewed);
+    listBox.appendChild(el('div', 'entry-group-label', `⏳ 미확인 (${unreviewed.length})`));
+    unreviewed.forEach(entry => listBox.appendChild(buildDashboardEntryCard(entry)));
+    listBox.appendChild(el('div', 'entry-group-label', `✅ 확인함 (${reviewed.length})`));
+    reviewed.forEach(entry => listBox.appendChild(buildDashboardEntryCard(entry)));
+  } else {
+    filtered.forEach(entry => listBox.appendChild(buildDashboardEntryCard(entry)));
+  }
+}
+
+function buildDashboardEntryCard(entry){
+  const lv = LEVEL_MAP[entry.level] || LEVELS[0];
+  const snippetSource = entry.mode === 'freeform' ? entry.text : (entry.lines || []).find(l => l && l.trim());
+  const snippet = snippetSource ? snippetSource.trim() : '(내용 없음)';
+  const hasNewReply = hasUnseenStudentFeedback(entry);
+  const hasNewEdit = hasUnseenStudentEdit(entry);
+  const badges = [];
+  if (hasNewEdit) badges.push(`<span class="entry-new-badge">🆕 수정 제출</span>`);
+  if (hasNewReply) badges.push(`<span class="entry-new-badge">🆕 학생 답장</span>`);
+  if (badges.length === 0) badges.push(`<span class="${entry.reviewed ? 'reviewed-badge' : 'unreviewed-badge'}">${entry.reviewed ? '✅ 확인함' : '⏳ 미확인'}</span>`);
+  const card = el('button', 'entry-card');
+  card.innerHTML = `
+    ${entry.photo ? `<img class="entry-thumb" src="${entry.photo}" alt="">` : `<div class="entry-thumb">📔</div>`}
+    <div class="entry-body">
+      <div class="entry-meta">
+        <span class="badge">${lv.emoji} ${escapeHtml(lv.label)}</span>
+        <span>${escapeHtml(formatDate(entry.date))}</span>
+        <span>🧑‍🎓 ${escapeHtml(entry.studentName || '')}</span>
       </div>
-    `;
-    card.addEventListener('click', () => openTeacherDetail(entry.id));
-    listBox.appendChild(card);
-  });
+      <div class="entry-snippet">${escapeHtml(snippet)}</div>
+      ${badges.join('')}
+    </div>
+  `;
+  card.addEventListener('click', () => openTeacherDetail(entry.id));
+  return card;
 }
 
 function openTeacherDetail(id){
@@ -2913,6 +2934,7 @@ $('#btn-print-export').addEventListener('click', () => window.print());
 $('#btn-cal-prev').addEventListener('click', () => shiftCalendarMonth(-1));
 $('#btn-cal-next').addEventListener('click', () => shiftCalendarMonth(1));
 $('#btn-clear-date-filter').addEventListener('click', () => { dashboardFilterDate = null; renderDashboard(); });
+$('#btn-toggle-group-unreviewed').addEventListener('click', () => { dashboardGroupUnreviewed = !dashboardGroupUnreviewed; renderDashboard(); });
 $('#btn-teacher-detail-back').addEventListener('click', () => showView('teacher-dashboard'));
 $('#btn-ai-check').addEventListener('click', runAiCheck);
 $('#btn-add-teacher-feedback').addEventListener('click', async () => {
