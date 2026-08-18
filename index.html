@@ -211,6 +211,8 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
   flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md);
   padding: 0.7rem 0.8rem; font-size: 14px; color: var(--ink);
 }
+.date-input:disabled { opacity: 1; background: var(--surface-2); color: var(--ink); cursor: not-allowed; -webkit-text-fill-color: var(--ink); }
+.date-lock-note { font-size: 11.5px; color: var(--ink-faint); margin-top: 0.4rem; }
 .mood-row { display: flex; gap: 0.5rem; }
 .mood-btn {
   flex: 1; background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--radius-md);
@@ -601,8 +603,9 @@ input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px
 
       <div class="section-label">🗓️ 날짜 · 오늘의 기분</div>
       <div class="field-row">
-        <input type="date" id="input-date" class="date-input">
+        <input type="date" id="input-date" class="date-input" disabled>
       </div>
+      <div class="date-lock-note">일기는 오늘 날짜로만 쓸 수 있어요. 지난 날짜는 선택할 수 없어요.</div>
       <div class="mood-row" id="mood-row" style="margin-top:0.5rem;"></div>
 
       <div class="section-label">📷 오늘의 한 장</div>
@@ -1929,7 +1932,10 @@ function validateDraft(){
 }
 
 async function saveEntry(){
-  draft.date = $('#input-date').value || todayStr();
+  // 날짜 필드는 화면에서 잠겨있어요(오늘 날짜 고정). 혹시 모를 조작을 막기 위해
+  // 입력값을 신뢰하지 않고, 새 일기는 항상 오늘 날짜로, 기존 일기는 원래 날짜
+  // 그대로 저장합니다 (지난 날짜로 새로 쓰거나 날짜를 바꿔치기할 수 없게).
+  draft.date = editingId ? draft.date : todayStr();
   const msg = validateDraft();
   if (msg) { $('#validation-msg').textContent = msg; return; }
   if (draft.photo && draft.photo.length > 900000) {
