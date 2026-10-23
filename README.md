@@ -53,34 +53,42 @@
 
 ## Claude AI 첨삭 설정 (선택, 유료)
 
-기본값인 무료 LanguageTool 첨삭으로 충분하다면 이 단계는 건너뛰어도 됩니다. 더 정교한 첨삭(관사·시제·문장구조까지)을 원하면 아래 순서대로 진행하세요. 예상 비용은 학급 단위 사용 기준 월 몇천 원 수준이고(자세한 건 대화에서 안내받은 내용 참고), Cloud Functions 자체는 무료 사용량 안에서 대부분 해결됩니다.
+기본값인 무료 LanguageTool 첨삭으로 충분하다면 이 단계는 건너뛰어도 됩니다. 더 정교한 첨삭(관사·시제·문장구조까지)을 원하면 아래 순서대로 진행하세요.
 
-### 1. Anthropic API 키 발급
+**API 키가 필요 없습니다.** Anthropic 콘솔에 별도로 가입하는 대신, 이미 Firebase에 쓰고 있는 같은 Google Cloud 프로젝트에서 "Claude on Vertex AI"를 통해 호출합니다. 인증은 Cloud Function에 연결된 서비스 계정의 Google Cloud 자격 증명으로 처리되고, 비용도 Anthropic이 아니라 Google Cloud 결제로 청구됩니다. 예상 비용은 학급 단위 사용 기준 월 몇천 원 수준이에요.
 
-1. https://console.anthropic.com 에서 계정을 만듭니다.
-2. 왼쪽 메뉴 **Settings → Billing**에서 결제수단을 등록하고 소액을 충전합니다.
-3. (권장) **Settings → Limits**에서 월 지출 한도를 걸어두면 예상치 못한 과금을 막을 수 있어요.
-4. **Settings → API Keys → Create Key**로 키를 발급받아 복사해둡니다 (`sk-ant-...` 형태).
-
-### 2. Firebase를 유료 요금제(Blaze)로 전환
+### 1. Firebase를 유료 요금제(Blaze)로 전환
 
 1. Firebase 콘솔 → 톱니바퀴 ⚙️ → **사용량 및 결제** → **요금제 수정** → **Blaze(종량제)** 선택 → 결제 계정 연결.
 2. Blaze는 기본요금이 없고 무료 사용량을 초과한 만큼만 청구되므로, 이 앱 규모에서는 Cloud Functions 비용이 거의 나오지 않습니다.
 
-### 3. Cloud Function 배포 (Google Cloud Console, 별도 프로그램 설치 불필요)
+### 2. Vertex AI에서 Claude 모델 접근 권한 요청
 
-1. https://console.cloud.google.com/functions 접속 → 상단에서 Firebase 프로젝트와 같은 프로젝트 선택.
+1. https://console.cloud.google.com/vertex-ai/model-garden 접속 → 상단에서 Firebase 프로젝트와 같은 프로젝트 선택.
+2. 검색창에 "Claude" 입력 → Anthropic의 Claude 모델 카드를 엽니다.
+3. 처음이라면 이용 약관 동의/활성화 버튼이 보일 수 있어요. 눌러서 활성화합니다 (보통 즉시 또는 몇 분 내 승인됩니다, 별도 가입·결제수단 재등록 필요 없음 — Firebase에 이미 연결된 결제 계정을 그대로 씁니다).
+
+### 3. Cloud Function용 서비스 계정에 권한 주기
+
+1. https://console.cloud.google.com/iam-admin/iam 접속 → 같은 프로젝트 선택.
+2. Cloud Functions(2세대)가 쓰는 서비스 계정을 찾습니다 (보통 `PROJECT_ID@appspot.gserviceaccount.com` 형태의 기본 컴퓨팅 서비스 계정이에요. 아직 함수를 만들기 전이라 안 보이면 4단계를 먼저 하고 다시 와서 이 단계를 진행해도 됩니다).
+3. 그 계정 옆 연필(수정) 아이콘 → **역할 추가** → **Vertex AI User**(`roles/aiplatform.user`) 선택 → 저장.
+
+### 4. Cloud Function 배포 (Google Cloud Console, 별도 프로그램 설치 불필요)
+
+1. https://console.cloud.google.com/functions 접속 → 상단에서 같은 프로젝트 선택.
 2. **함수 만들기(Create Function)** 클릭.
 3. 기본 설정: 환경 **2세대**, 함수 이름 `checkGrammar`, 리전은 Firestore와 같은 곳(예: asia-northeast3), 트리거 유형 **HTTPS**, 인증은 **인증되지 않은 호출 허용(Allow unauthenticated)** 선택 → 다음.
 4. 런타임: **Node.js 20** (또는 최신) 선택, 진입점(Entry point)은 `checkGrammar`.
 5. 소스 코드 인라인 편집기에서 이 저장소의 `cloud-function/index.js`, `cloud-function/package.json` 내용을 그대로 각각 붙여넣기.
 6. "런타임, 빌드, 연결 및 보안 설정" 펼치기 → **런타임 환경 변수**에 추가:
-   - 이름: `ANTHROPIC_API_KEY`
-   - 값: 1단계에서 발급받은 키
+   - 이름: `ANTHROPIC_VERTEX_PROJECT_ID`
+   - 값: 이 Google Cloud 프로젝트의 **프로젝트 ID** (`firebase-config.js`의 `projectId`와 같은 값이에요)
 7. **배포** 클릭 (몇 분 소요).
 8. 배포가 끝나면 함수 상세 페이지에 나오는 **트리거 URL**을 복사합니다 (`https://...run.app` 또는 `https://REGION-PROJECT.cloudfunctions.net/checkGrammar` 형태).
+9. 아직 3단계를 못 했다면, 이제 Cloud Functions가 쓰는 서비스 계정 이름이 함수 상세 페이지의 "런타임, 빌드..." 탭에 보일 거예요. 그 계정으로 3단계(IAM에서 Vertex AI User 역할 추가)를 마무리하세요.
 
-### 4. 앱에 연결하기
+### 5. 앱에 연결하기
 
 `firebase-config.js`의 `window.AI_CHECK_ENDPOINT` 값을 8단계에서 복사한 트리거 URL로 교체하고 커밋·푸시합니다. 배포가 끝나면 선생님 화면의 "AI 문법 · 철자 첨삭" 아래에 "🤖 Claude AI로 첨삭해요"라고 표시되고, 그때부터 Claude가 첨삭을 담당합니다.
 

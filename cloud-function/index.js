@@ -1,6 +1,16 @@
 const functions = require('@google-cloud/functions-framework');
+const { AnthropicVertex } = require('@anthropic-ai/vertex-sdk');
 
-const MODEL = 'claude-haiku-5-5';
+const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
+
+// API 키 없이 동작합니다 — 이 함수에 연결된 서비스 계정의 Google Cloud 자격
+// 증명으로 인증돼요. 배포 시 ANTHROPIC_VERTEX_PROJECT_ID 환경 변수(Firebase/
+// GCP 프로젝트 ID)만 설정해주면 되고, 리전은 가용성이 가장 넓은 "global"을
+// 기본값으로 씁니다.
+const client = new AnthropicVertex({
+  projectId: process.env.ANTHROPIC_VERTEX_PROJECT_ID,
+  region: process.env.CLOUD_ML_REGION || 'global',
+});
 
 const SYSTEM_PROMPT = `You are a friendly, encouraging English writing tutor reviewing a K-12 student's short English diary entry.
 Find real grammar, spelling, and clarity issues: missing articles, wrong verb tense, sentence fragments, typos, subject-verb agreement, missing punctuation, etc.
@@ -29,38 +39,21 @@ functions.http('checkGrammar', async (req, res) => {
     return;
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.error('ANTHROPIC_API_KEY is not set');
+  if (!process.env.ANTHROPIC_VERTEX_PROJECT_ID) {
+    console.error('ANTHROPIC_VERTEX_PROJECT_ID 환경 변수가 설정되지 않았습니다.');
     res.status(500).json({ error: 'Server not configured' });
     return;
   }
 
   try {
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: text }],
-      }),
+    const message = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: text }],
     });
 
-    if (!claudeRes.ok) {
-      const errText = await claudeRes.text();
-      console.error('Anthropic API error', claudeRes.status, errText);
-      res.status(502).json({ error: 'AI service error' });
-      return;
-    }
-
-    const data = await claudeRes.json();
-    const raw = (data.content && data.content[0] && data.content[0].text) || '[]';
+    const raw = (message.content && message.content[0] && message.content[0].text) || '[]';
 
     let suggestions = [];
     try {
@@ -74,7 +67,7 @@ functions.http('checkGrammar', async (req, res) => {
 
     res.status(200).json({ suggestions });
   } catch (e) {
-    console.error(e);
+    console.error('Vertex AI error', e);
     res.status(500).json({ error: 'Internal error' });
   }
 });
