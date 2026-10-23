@@ -1,6 +1,6 @@
 const functions = require('@google-cloud/functions-framework');
 
-const MODEL = 'claude-haiku-4-5-20251001';
+const MODEL = 'claude-haiku-5-5';
 
 const SYSTEM_PROMPT = `You are a friendly, encouraging English writing tutor reviewing a K-12 student's short English diary entry.
 Find real grammar, spelling, and clarity issues: missing articles, wrong verb tense, sentence fragments, typos, subject-verb agreement, missing punctuation, etc.
